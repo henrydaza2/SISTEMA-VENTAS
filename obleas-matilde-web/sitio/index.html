@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#221A2E" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Obleas Matilde">
+<meta name="format-detection" content="telephone=no">
 <title>Obleas Matilde</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,12 +26,13 @@
 }
 @media (prefers-color-scheme: dark){
   :root{
-    --bg:#15110E; --surface:#1E1814; --surface-2:#29211B; --ink:#F5EDE4; --muted:#B5A595; --line:#372D25;
-    --brand:#F59E0B; --brand-ink:#1A1206; --brand-soft:#3A2810;
-    --cash:#4ADE80; --cash-soft:#14321F; --transfer:#7AB2FF; --transfer-soft:#16264A;
-    --danger:#F87171; --danger-soft:#3B1717; --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
-    --scrim:rgba(0,0,0,.6); --on-ink:#15110E;
-    --c1:#F59E0B; --c2:#2DD4BF; --c3:#A78BFA; --c4:#F472B6; --c5:#7AB2FF; --c6:#A3E635;
+    /* morado nocturno: fondo morado muy oscuro, botones color arequipe */
+    --bg:#17121F; --surface:#221A2E; --surface-2:#2C2239; --ink:#F4EEFB; --muted:#B9AECB; --line:#3A2E4A;
+    --brand:#F5B041; --brand-ink:#1E1405; --brand-soft:#41321C;
+    --cash:#5EE08F; --cash-soft:#163626; --transfer:#8FB8FF; --transfer-soft:#1E2A4D;
+    --danger:#FF8A8A; --danger-soft:#43202A; --shadow:0 1px 2px rgba(6,2,12,.4),0 6px 20px rgba(6,2,12,.35);
+    --scrim:rgba(8,4,14,.65); --on-ink:#17121F;
+    --c1:#F5B041; --c2:#4FD1C5; --c3:#C4A1FF; --c4:#F472B6; --c5:#8FB8FF; --c6:#A3E635;
     color-scheme:dark;
   }
 }
@@ -253,15 +260,17 @@ dialog.narrow{width:min(440px,calc(100vw - 32px))}
 .note{display:flex;gap:12px;padding:14px;border-radius:12px;background:var(--brand-soft);font-size:15px;margin-bottom:14px}
 .note svg{color:var(--brand);margin-top:2px}
 
-.receipt{width:302px;max-width:100%;margin:0 auto;background:var(--paper);color:var(--paper-ink);font-family:"Courier New",ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.45;padding:22px 18px 26px;border-radius:4px;box-shadow:var(--shadow);font-variant-numeric:tabular-nums}
+/* recibo: letra sin serifa y gruesa, porque las impresoras térmicas borran los trazos delgados */
+.receipt{width:302px;max-width:100%;margin:0 auto;background:var(--paper);color:var(--paper-ink);font-family:Arial,Helvetica,"Liberation Sans",sans-serif;font-size:13.5px;font-weight:600;line-height:1.4;padding:22px 18px 26px;border-radius:4px;box-shadow:var(--shadow);font-variant-numeric:tabular-nums}
 .receipt .c{text-align:center}
-.receipt .shop{font-size:18px;font-weight:700;letter-spacing:.08em}
-.receipt .hr{border-top:1px dashed var(--paper-ink);margin:10px 0;opacity:.6}
+.receipt .shop{font-size:19px;font-weight:800;letter-spacing:.06em}
+.receipt .hr{border-top:2px dashed var(--paper-ink);margin:10px 0}
 .receipt .r{display:flex;justify-content:space-between;gap:10px}
 .receipt .item{margin-bottom:6px}
 .receipt .item .add{padding-left:16px}
-.receipt .item .sub{display:flex;justify-content:space-between;padding-left:16px;opacity:.8}
-.receipt .tot{font-size:17px;font-weight:700}
+.receipt .item .sub{display:flex;justify-content:space-between;padding-left:16px}
+.receipt .tot{font-size:18px;font-weight:800}
+.receipt .item > div:first-child{font-weight:700}
 .receipt .void{border:2px solid var(--paper-ink);text-align:center;font-weight:700;padding:4px;margin-bottom:10px}
 .rc-wrap{background:var(--surface-2);padding:20px 16px;max-height:58vh;overflow:auto}
 #printArea{display:none}
@@ -299,12 +308,109 @@ dialog.narrow{width:min(440px,calc(100vw - 32px))}
 @media (max-width:520px){ .stats{grid-template-columns:1fr 1fr} .stat .v{font-size:22px} .stat{padding:14px} }
 @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 
+
+/* ===================== Teléfono ===================== */
+html{-webkit-text-size-adjust:100%}
+button,a,label,input,select{-webkit-tap-highlight-color:transparent}
+.tb-sync{display:none}
+/* las ventanas: cabeza y botones fijos, solo el contenido se desplaza */
+dialog[open]{display:flex;flex-direction:column;max-height:calc(100dvh - 32px)}
+dialog > form{display:flex;flex-direction:column;min-height:0;flex:1 1 auto}
+dialog .dlg-body,dialog .sold,dialog .rc-wrap{overflow-y:auto;min-height:0;flex:1 1 auto;overscroll-behavior:contain}
+dialog .dlg-head,dialog .dlg-foot{flex:none}
+@media (max-width:1023px){
+  .tb-sync{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+  .tb-sync .dot{background:var(--cash)}
+  .tb-sync.off .dot{background:var(--danger)}
+  .tb-sync.off{color:var(--danger)}
+}
+@media (max-width:640px){
+  :root{--top-h:61px}
+  main{padding-top:14px}
+  .page-head{margin-bottom:12px;gap:10px;align-items:center}
+  .page-head h1{font-size:21px}
+  .page-head p{display:none}
+  /* en Vender, el título ya está en la barra de abajo: arriba solo va el estado de la caja */
+  #page-vender .page-head > div:first-child{display:none}
+  #page-vender .page-head{margin-bottom:4px}
+  .cajabar{width:100%;flex-wrap:nowrap;gap:8px;justify-content:space-between}
+  .cajachip{padding:6px 10px;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cajabar .btn{flex:none}
+  .notice{padding:12px;gap:10px;margin-bottom:12px}
+  .notice .t{min-width:0}
+  .notice .btn{width:100%}
+  /* buscador y categorías quedan a la vista al bajar */
+  .vend-tools{position:sticky;top:calc(var(--top-h) + env(safe-area-inset-top));z-index:15;background:var(--bg);margin:0 -16px;padding:8px 16px 2px}
+  .chips{margin:8px -16px 4px;padding:2px 16px 6px}
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .prod{min-height:112px;padding:12px;gap:4px;border-radius:14px}
+  .prod-name{font-size:15px}
+  .prod-price{font-size:17px}
+  .prod-cat{font-size:11px}
+  /* ventanas como hojas que suben desde abajo */
+  dialog,dialog.narrow{width:100%;max-width:100%;margin:auto 0 0;border-radius:20px 20px 0 0;max-height:92dvh;padding-bottom:env(safe-area-inset-bottom)}
+  dialog[open]{max-height:92dvh}
+  .dlg-head{padding:16px 16px 0}
+  .dlg-body{padding:14px 16px}
+  .dlg-foot{padding:10px 16px 16px;border-top:1px solid var(--line)}
+  .dlg-foot .btn{flex:1}
+  .chk{padding:10px 12px;min-height:48px}
+  .addfoot{position:sticky;bottom:-14px;background:var(--surface);padding:10px 0 2px;margin-top:4px}
+  .sold{padding:20px 16px 8px}
+  .sold .amt{font-size:34px}
+  /* la hoja de venta se desplaza completa (los productos no quedan apretados) y Cobrar siempre está a la vista */
+  .cart{max-height:88dvh;overflow-y:auto;overscroll-behavior:contain;padding-bottom:0}
+  .cart-items{overflow:visible;flex:none;min-height:0}
+  .ci{padding:10px 0;align-items:center}
+  .ci > :nth-child(1){grid-column:1;grid-row:1/3}
+  .ci > :nth-child(2){grid-column:2;grid-row:1}
+  .ci > :nth-child(3){display:none}
+  .ci > :nth-child(4){grid-column:2;grid-row:2}
+  .cart-head{position:sticky;top:-16px;z-index:2;background:var(--surface);margin:-16px -16px 8px;padding:12px 16px 8px}
+  #checkout{position:sticky;bottom:0;z-index:2;box-shadow:0 -12px 16px var(--surface);margin-bottom:max(16px,env(safe-area-inset-bottom))}
+  /* Cierre e Inventario */
+  .page-head .toolbar{width:100%;display:grid;grid-template-columns:1fr auto auto;gap:8px}
+  .page-head .toolbar input[type=date]{width:100%!important;grid-column:1/-1}
+  .stats{gap:10px}
+  .stat .k{font-size:13px}
+  .stat .k .ico{width:28px;height:28px}
+  .card{padding:16px}
+  .adminbar{padding:8px 12px;gap:8px}
+  .adminbar .msg{font-size:14px;min-width:0}
+  .toolbar .seg{width:100%;display:grid;grid-template-columns:repeat(3,1fr)}
+  .seg button{padding:0 6px}
+  .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tile b{font-size:24px}
+  /* tablas convertidas en tarjetas: nada se sale de la pantalla */
+  .table-wrap{margin:0;padding:0;overflow:visible}
+  table.rt thead{display:none}
+  table.rt,table.rt tbody,table.rt tfoot{display:block}
+  table.rt tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;padding:12px 0;border-bottom:1px solid var(--line)}
+  table.rt tbody tr:last-child{border-bottom:0}
+  table.rt td{display:block;padding:0;border:0;text-align:left!important;white-space:normal;min-width:0;overflow-wrap:anywhere}
+  table.rt td::before{content:attr(data-label);display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  table.rt td[data-label=""]::before,table.rt tbody td:first-child::before{display:none}
+  table.rt tbody td:first-child{font-size:16px}
+  table.rt td:first-child,table.rt td.act,table.rt td[colspan]{grid-column:1/-1}
+  table.rt tbody tr:hover td{background:none}
+  table.rt tfoot tr{border-top:2px solid var(--line)}
+  table.rt tfoot td{border:0}
+  table.rt .actions{flex-wrap:wrap}
+  table.rt td.act .actions{display:flex;justify-content:flex-start}
+  .rrow{grid-template-columns:minmax(0,1fr) 96px 44px}
+  .toast{bottom:calc(var(--nav-h) + 16px + env(safe-area-inset-bottom))}
+}
 @media print{
   @page{size:80mm auto;margin:0}
   html,body{background:#fff!important;margin:0}
   body > *{display:none!important}
   body > #printArea{display:block!important}
-  #printArea .receipt{width:72mm;margin:0 auto;padding:3mm 2mm 6mm;box-shadow:none;border-radius:0;color:#000;background:#fff;font-size:12px}
+  #printArea .receipt{width:72mm;margin:0 auto;padding:3mm 2mm 6mm;box-shadow:none;border-radius:0;color:#000;background:#fff;font-size:13px;font-weight:700}
+  /* en papel todo sale negro puro y sin transparencias, también lo que no es negrilla */
+  #printArea, #printArea *{color:#000!important;opacity:1!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;text-shadow:none!important}
+  #printArea .receipt .hr{border-top:2px dashed #000}
+  #printArea .receipt .void{border:2px solid #000}
+  #printArea .receipt .tot,#printArea .receipt .shop{font-weight:900}
 }
 </style>
 </head>
@@ -356,6 +462,7 @@ dialog.narrow{width:min(440px,calc(100vw - 32px))}
 
   <header class="topbar">
     <div class="logo"><div class="logo-mark">OM</div><div><b>Obleas Matilde</b></div></div>
+    <div class="tb-sync" id="tbSync" role="status"><i class="dot"></i><span>Conectando…</span></div>
   </header>
 
   <main>
@@ -379,8 +486,10 @@ dialog.narrow{width:min(440px,calc(100vw - 32px))}
       </div>
       <div class="pos">
         <div>
+          <div class="vend-tools">
           <div class="search"><svg class="i"><use href="#i-search"/></svg><label for="search" class="sr">Buscar producto</label><input id="search" class="input" placeholder="Buscar producto…" autocomplete="off"></div>
           <div class="chips" id="catChips" role="group" aria-label="Categorías"></div>
+          </div>
           <div class="grid" id="prodGrid"><div class="empty" style="grid-column:1/-1">Cargando productos…</div></div>
         </div>
         <aside class="cart card" id="cartPanel" aria-label="Venta actual">
@@ -434,7 +543,7 @@ dialog.narrow{width:min(440px,calc(100vw - 32px))}
         </div>
         <p class="muted small" id="invHint" style="margin:-4px 0 12px"></p>
         <div class="table-wrap">
-          <table>
+          <table class="rt">
             <thead id="invHead"></thead>
             <tbody id="invBody"></tbody>
           </table>
@@ -463,7 +572,7 @@ dialog.narrow{width:min(440px,calc(100vw - 32px))}
         <div class="card">
           <h2>Caja</h2>
           <div class="table-wrap">
-            <table>
+            <table class="rt">
               <thead><tr><th>Abierta</th><th>Cerrada</th><th class="num">Base</th><th class="num">Ventas efectivo</th><th class="num">Debería haber</th><th class="num">Contado</th><th>Resultado</th></tr></thead>
               <tbody id="cajasBody"></tbody>
             </table>
@@ -477,7 +586,7 @@ dialog.narrow{width:min(440px,calc(100vw - 32px))}
           <div class="card">
             <h2>Ventas</h2>
             <div class="table-wrap">
-              <table>
+              <table class="rt">
                 <thead><tr><th>Orden</th><th>Hora</th><th>Detalle</th><th>Pago</th><th class="num">Total</th><th><span class="sr">Acciones</span></th></tr></thead>
                 <tbody id="salesBody"></tbody>
               </table>
@@ -486,7 +595,7 @@ dialog.narrow{width:min(440px,calc(100vw - 32px))}
           <div class="card">
             <h2>Ganancia por producto</h2>
             <div class="table-wrap">
-              <table>
+              <table class="rt">
                 <thead><tr><th>Producto</th><th class="num">Cant.</th><th class="num">Ventas</th><th class="num">Costo</th><th class="num">Ganancia</th><th class="num">Margen</th></tr></thead>
                 <tbody id="profitBody"></tbody>
                 <tfoot id="profitFoot"></tfoot>
@@ -497,7 +606,7 @@ dialog.narrow{width:min(440px,calc(100vw - 32px))}
         <div class="card">
           <h2>Insumos usados</h2>
           <div class="table-wrap">
-            <table>
+            <table class="rt">
               <thead><tr><th>Insumo</th><th class="num">Cantidad usada</th><th class="num">Costo</th><th class="num">Queda</th></tr></thead>
               <tbody id="usedBody"></tbody>
             </table>

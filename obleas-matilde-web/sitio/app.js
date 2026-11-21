@@ -25,7 +25,19 @@ const fDate = d => new Date(d).toLocaleDateString('es-CO',{timeZone:'America/Bog
 const fTime = d => new Date(d).toLocaleTimeString('es-CO',{timeZone:'America/Bogota',hour:'2-digit',minute:'2-digit'});
 function toast(m){ const t=$('toast'); t.innerHTML=icon('check')+esc(m); t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),3000); }
 function banner(msg){ $('banner').hidden=!msg; $('bannerTxt').textContent=msg||''; }
-function setSync(ok,txt){ const s=$('syncState'); s.classList.toggle('off',!ok); s.querySelector('span').textContent=txt; }
+function setSync(ok,txt){ ['syncState','tbSync'].forEach(id=>{ const s=$(id); if(!s) return; s.classList.toggle('off',!ok); s.querySelector('span').textContent=txt; }); }
+// En el teléfono las tablas se ven como tarjetas: cada celda lleva el nombre de su columna
+function labelTables(){
+  document.querySelectorAll('table.rt').forEach(t=>{
+    const heads=[...t.querySelectorAll('thead th')].map(th=>th.querySelector('.sr')?null:th.textContent.trim());
+    t.querySelectorAll('tbody tr, tfoot tr').forEach(tr=>{ let i=0; [...tr.children].forEach(td=>{
+      const span=td.colSpan||1, h=heads[i];
+      td.dataset.label = span>1 ? '' : (h??''); td.classList.toggle('act', h===null && span===1); i+=span; }); });
+  });
+}
+let labelQueued=false;
+new MutationObserver(()=>{ if(labelQueued) return; labelQueued=true; queueMicrotask(()=>{ labelQueued=false; labelTables(); }); })
+  .observe(document.querySelector('main'),{childList:true,subtree:true});
 
 // =====================================================================
 //  Servidor
@@ -226,8 +238,8 @@ function renderCaja(){
   const c=S.caja||{};
   const editing=!!editMode;
   $('cajaBar').innerHTML = !S.loaded ? '' : c.abierta
-    ? `<span class="cajachip"><i class="dot cash"></i>Caja abierta · desde ${fTime(c.desde)}</span><button class="btn ghost sm" id="closeCajaBtn">${icon('lock')}Cerrar caja</button>`
-    : `<span class="cajachip off"><i class="dot" style="background:var(--danger)"></i>Caja cerrada</span><button class="btn sm" data-open-caja>${icon('store')}Abrir caja</button>`;
+    ? `<span class="cajachip"><i class="dot cash"></i>Caja abierta · ${fTime(c.desde)}</span><button class="btn ghost sm" id="closeCajaBtn">${icon('lock')}Cerrar caja</button>`
+    : `<span class="cajachip off"><i class="dot" style="background:var(--danger)"></i>Caja cerrada</span>${editing?`<button class="btn sm" data-open-caja>${icon('store')}Abrir caja</button>`:''}`;
   $('cajaClosed').hidden = !S.loaded || c.abierta || editing;
   document.querySelectorAll('[data-open-caja]').forEach(b=>b.onclick=abrirCaja);
   if($('closeCajaBtn')) $('closeCajaBtn').onclick=cerrarCaja;
@@ -286,10 +298,13 @@ function renderProducts(){
   if(!S.loaded) return;
   const q = $('search').value.toLowerCase().trim();
   const counts = {}; S.menu.forEach(p=>{const c=p.cat||'Sin categoría';counts[c]=(counts[c]||0)+1;});
+  const catRank = c => (/oblea/i.test(c)?0:1);
+  const cats = Object.keys(counts).sort((a,b)=>catRank(a)-catRank(b)||a.localeCompare(b));
   if(cat!=='Todas' && !counts[cat]) cat='Todas';
-  $('catChips').innerHTML = ['Todas',...Object.keys(counts).sort()].map(c=>`<button class="chip" aria-pressed="${c===cat}" data-c="${esc(c)}">${esc(c)} <span class="n">${c==='Todas'?S.menu.length:counts[c]}</span></button>`).join('');
+  $('catChips').innerHTML = ['Todas',...cats].map(c=>`<button class="chip" aria-pressed="${c===cat}" data-c="${esc(c)}">${esc(c)} <span class="n">${c==='Todas'?S.menu.length:counts[c]}</span></button>`).join('');
   $('catChips').querySelectorAll('.chip').forEach(b=>b.onclick=()=>{cat=b.dataset.c;renderProducts();});
-  const list = S.menu.filter(p=>(cat==='Todas'||(p.cat||'Sin categoría')===cat) && (p.name+' '+(p.cat||'')).toLowerCase().includes(q));
+  const list = S.menu.filter(p=>(cat==='Todas'||(p.cat||'Sin categoría')===cat) && (p.name+' '+(p.cat||'')).toLowerCase().includes(q))
+    .sort((a,b)=>cats.indexOf(a.cat||'Sin categoría')-cats.indexOf(b.cat||'Sin categoría'));
   $('prodGrid').innerHTML = list.length ? list.map(p=>{
     const inCart = qtyInCart(p.id);
     const left = tracked(p) ? p.stock-inCart : null;
