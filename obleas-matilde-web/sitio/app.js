@@ -553,7 +553,27 @@ async function loadAdminProducts(){
 }
 $('invSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{invFilter=b.dataset.f;$('invSeg').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));renderInventory();});
 $('invSearch').oninput=()=>renderInventory();
+// Aviso: insumos que no se descuentan al vender porque nunca se contaron (o les falta el precio)
+function renderInvAlert(){
+  const ins = insumos();
+  const usado = id => A.products.some(p=>(p.recipe||[]).some(r=>r.id===id));
+  const sinContar = ins.filter(p=>p.qty==null && usado(p.id));
+  const sinPrecio = ins.filter(p=>!(+p.price>0) && usado(p.id));
+  const box = $('invAlert');
+  if(!sinContar.length && !sinPrecio.length){ box.hidden=true; box.innerHTML=''; return; }
+  const lista = l => l.map(p=>esc(p.name)).join(', ');
+  box.innerHTML = `${icon('info')}<div class="t">
+      ${sinContar.length?`<b>${sinContar.length===1?'1 insumo no se descuenta':sinContar.length+' insumos no se descuentan'} al vender porque no se ${sinContar.length===1?'ha':'han'} contado.</b>
+        <div class="names">${lista(sinContar)}. Toca <b>Contar</b> en cada uno y escribe cuánto hay ahora; desde ahí cada venta lo va bajando.</div>`:''}
+      ${sinPrecio.length?`<div class="names" style="margin-top:6px"><b>Sin precio:</b> ${lista(sinPrecio)}. Su costo sale en $0: registra una <b>Compra</b> con el precio.</div>`:''}
+    </div>
+    ${invFilter!=='insumo'?'<button class="btn sm" id="invAlertGo">Ir a Insumos</button>':''}`;
+  box.hidden=false;
+  const go=$('invAlertGo');
+  if(go) go.onclick=()=>{ invFilter='insumo'; $('invSeg').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.f==='insumo')); renderInventory(); };
+}
 function renderInventory(){
+  renderInvAlert();
   $('catList').innerHTML = [...new Set(A.products.filter(p=>p.type==='venta').map(p=>p.cat).filter(Boolean))].sort().map(c=>`<option value="${esc(c)}">`).join('');
   const n=t=>A.products.filter(p=>p.type===t).length;
   $('invSub').textContent=`${n('venta')} productos · ${n('adicional')} adicionales · ${n('insumo')} insumos`;

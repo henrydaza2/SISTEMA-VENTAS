@@ -123,6 +123,9 @@ main{padding:28px 32px 48px;min-width:0}
 .notice{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:16px;border-radius:var(--radius);background:var(--surface-2);border:1px dashed var(--line);margin-bottom:16px}
 .notice .t{flex:1;min-width:200px}
 .notice.edit{background:var(--transfer-soft);border-color:transparent;color:var(--ink)}
+.notice.warn{background:var(--brand-soft);border-color:transparent;color:var(--ink)}
+.notice.warn > svg{color:var(--brand)}
+.notice .names{font-size:14px;margin-top:2px}
 .pos{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:24px;align-items:start}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px}
 .prod{position:relative;display:flex;flex-direction:column;gap:6px;min-height:132px;padding:16px;text-align:left;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow);overflow:hidden;transition:border-color .15s,transform .12s}
@@ -532,6 +535,7 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
         <button class="btn" id="newProd"><svg class="i"><use href="#i-plus"/></svg>Nuevo</button>
       </div>
       <div class="adminbar"><div class="msg"><svg class="i"><use href="#i-unlock"/></svg>Sesión de administrador abierta</div><button class="btn ghost sm" data-lock><svg class="i"><use href="#i-lock"/></svg>Bloquear</button></div>
+      <div class="notice warn" id="invAlert" role="status" hidden></div>
       <div class="card">
         <div class="toolbar">
           <div class="search"><svg class="i"><use href="#i-search"/></svg><label for="invSearch" class="sr">Buscar en inventario</label><input id="invSearch" class="input" placeholder="Buscar…" autocomplete="off"></div>
