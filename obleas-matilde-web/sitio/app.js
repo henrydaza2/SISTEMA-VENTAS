@@ -516,31 +516,23 @@ $('soldPrint').onclick=()=>printReceipt(lastSale);
 $('lastReceipt').onclick=()=>openReceipt(lastSale);
 
 let rcSale=null;
+// Recibo compacto para rollo de 80 mm: lo mismo en menos líneas (gasta menos papel)
+const fDateShort = d => new Date(d).toLocaleDateString('es-CO',{timeZone:'America/Bogota',day:'2-digit',month:'2-digit',year:'2-digit'});
 function receiptHtml(s){
-  const units=s.items.reduce((a,i)=>a+int(i.qty),0);
   const sub = s.subtotal ?? s.total;
+  const addsLine = i => (i.adds||[]).map(a=>esc(a.name)+(a.incl?' (incl.)':'')).join(', ');
   return `${s.void?'<div class="void">VENTA ANULADA</div>':''}
     <div class="c shop">${SHOP}</div>
-    <div class="c">Obleas y bolis</div>
-    <div class="c">Comprobante de venta</div>
+    <div class="r tot"><span>Orden N.º ${pad3(s.order)}</span><span class="when">${fDateShort(s.date)} ${fTime(s.date)}</span></div>
+    ${s.edited?`<div class="in">Modificada ${fTime(s.edited)}</div>`:''}
     <div class="hr"></div>
-    <div class="r tot"><span>ORDEN N.º</span><span>${pad3(s.order)}</span></div>
-    <div class="r"><span>Recibo</span><span>${String(s.day).replace(/-/g,'')}-${pad3(s.order)}</span></div>
-    <div class="r"><span>Fecha</span><span>${fDate(s.date)}</span></div>
-    <div class="r"><span>Hora</span><span>${fTime(s.date)}</span></div>
-    ${s.edited?`<div class="r"><span>Modificada</span><span>${fTime(s.edited)}</span></div>`:''}
+    ${s.items.map(i=>`<div class="item"><div class="r"><span>${esc(i.qty)} ${esc(i.name)}</span><span>${money(i.price*i.qty)}</span></div>${addsLine(i)?`<div class="in">+ ${addsLine(i)}</div>`:''}${int(i.qty)>1?`<div class="in">${money(i.price)} c/u</div>`:''}</div>`).join('')}
     <div class="hr"></div>
-    ${s.items.map(i=>`<div class="item"><div>${esc(i.qty)} x ${esc(i.name)}</div>${(i.adds||[]).map(a=>`<div class="add">+ ${esc(a.name)}${a.incl?' (incl.)':''}</div>`).join('')}<div class="sub"><span>${money(i.price)} c/u</span><span>${money(i.price*i.qty)}</span></div></div>`).join('')}
-    <div class="hr"></div>
-    <div class="r"><span>Artículos</span><span>${esc(units)}</span></div>
     ${+s.discount>0?`<div class="r"><span>Subtotal</span><span>${money(sub)}</span></div><div class="r"><span>Descuento</span><span>-${money(s.discount)}</span></div>`:''}
     <div class="r tot"><span>TOTAL</span><span>${money(s.total)}</span></div>
+    <div class="r"><span>${s.pay==='efectivo'?'Efectivo':'Transferencia'}${s.received>0?` · Recibió ${money(s.received)}`:''}</span><span>${s.received>0?`Cambio ${money(s.received-s.total)}`:''}</span></div>
     <div class="hr"></div>
-    <div class="r"><span>Pago</span><span>${s.pay==='efectivo'?'Efectivo':'Transferencia'}</span></div>
-    ${s.received>0?`<div class="r"><span>Recibido</span><span>${money(s.received)}</span></div><div class="r"><span>Cambio</span><span>${money(s.received-s.total)}</span></div>`:''}
-    <div class="hr"></div>
-    <div class="c">¡Gracias por tu compra!</div>
-    <div class="c">Vuelve pronto</div>`;
+    <div class="c">¡Gracias por tu compra!</div>`;
 }
 function openReceipt(s){ if(!s) return; rcSale=s; $('receipt').innerHTML=receiptHtml(s); $('receiptDialog').showModal(); }
 function printReceipt(s){ if(!s) return; $('printArea').innerHTML=`<div class="receipt">${receiptHtml(s)}</div>`; window.print(); }
