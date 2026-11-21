@@ -1,0 +1,15 @@
+{
+  "name": "pgtest",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.mjs ..",
+    "server": "node server.mjs .."
+  },
+  "keywords": [],
+  "type": "module",
+  "dependencies": {
+    "@electric-sql/pglite": "^0.3.16"
+  }
+}
