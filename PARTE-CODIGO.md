@@ -18,6 +18,7 @@ Este documento resume lo importante del código: cómo está armado, qué hace c
 | `obleas-matilde-web/supabase.sql` | Base de datos inicial: tablas, contraseña, PIN, ventas | Ejecutado |
 | `obleas-matilde-web/supabase-v2.sql` | Caja, adicionales, recetas, costos, editar ventas, meseros | Ejecutado |
 | `obleas-matilde-web/supabase-v3.sql` | Seguridad: bloqueo de intentos, ventas sin duplicar, día de la caja, respaldos revisados, descuento máximo; incluye el arreglo de insumos | **Pendiente de ejecutar** |
+| `obleas-matilde-web/supabase-v4.sql` | Galletas exactas: todas las obleas usan 2 del paquete x 100; los insumos por unidades van sin merma | **Pendiente de ejecutar** (después de v3) |
 | `obleas-matilde-web/supabase-fix-insumos.sql` | Devuelve 3 insumos a su tipo correcto | Reemplazado por v3 (no hace falta) |
 | `obleas-matilde-web/pruebas/` | Pruebas de la base de datos y servidor local de prueba | Herramienta |
 | `obleas-matilde-web/INSTRUCCIONES.md` | Guía de instalación (Supabase + Netlify) | Guía |
@@ -88,8 +89,8 @@ Supabase (PostgreSQL)
 | 4 obleas: $3.500 / $4.500 / $5.500 (1 salsa) / $6.500 (3 salsas) | `productos`, `supabase-v2.sql` |
 | Las primeras salsas que marca el cliente van incluidas; las demás cuestan $1.000 | `_armar` (servidor) y `addsDetail` (página) |
 | Receta: 2 obleas del paquete + 25 g arequipe (+25 g queso); salsa 25 g; lluvia y chispitas 15 g; leche condensada 25 g | `recetas` |
-| Merma del 15 % en obleas y adicionales | `productos.merma` |
-| Costo de la oblea base: $748 | `_costo_unit` |
+| Merma del 15 % en obleas y adicionales, solo en lo que va en gramos; las galletas (unidades) van exactas: 2 por oblea | `productos.merma`, `_armar`, `_costo_unit` (v4) |
+| Costo de la oblea base: $697 (2 galletas $340 + arequipe con merma $357) | `_costo_unit` |
 | Bolis: costo fijo $2.800, sin receta | `productos.costo` |
 | Sin caja abierta no se vende | `registrar_venta` |
 | Número de orden por día (001, 002…), sin repetir aunque vendan dos a la vez | `registrar_venta` (bloqueo por día) |
@@ -138,7 +139,7 @@ node test.mjs ..
 node server.mjs ..
 ```
 
-- `test.mjs` (o `npm test`) corre **59 pruebas** de la base de datos (v1 + v2 + v3) en un Postgres local (PGlite). Todas pasan. Termina con error si alguna falla.
+- `test.mjs` (o `npm test`) corre **63 pruebas** de la base de datos (v1 a v4) en un Postgres local (PGlite). Todas pasan. Termina con error si alguna falla.
 - `server.mjs` levanta http://localhost:8787 (solo para este computador) con la página real, las reglas de `_headers` y una base de datos de prueba. Claves de prueba: PIN `654321`, código de meseros `777777`, contraseña `admin123`.
 - Nada de esto toca la página ni la base de datos reales.
 
