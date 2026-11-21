@@ -679,10 +679,11 @@ function updatePreview(){
   const rows=recipeRowsData(), merma=+$('pMerma').value||0, price=+$('pPrice').value||0;
   let cost;
   if(rows.length){
-    const base=rows.reduce((s,r)=>{const i=findA(r.id);return s+(i?r.qty*unitCostIns(i):0);},0);
-    cost=base*(1+merma/100);
+    // la merma no se suma a lo que se cuenta por unidades (las galletas van exactas)
+    const fac = i => i.unit==='u' ? 1 : 1+merma/100;
+    cost=rows.reduce((s,r)=>{const i=findA(r.id);return s+(i?r.qty*unitCostIns(i)*fac(i):0);},0);
     const det=rows.map(r=>{const i=findA(r.id);return i?`${esc(i.name)}: ${num(r.qty,2)} ${esc(i.unit||'')} = $${num(r.qty*unitCostIns(i),0)}`:''}).filter(Boolean).join('<br>');
-    $('costPreview').innerHTML=`<div class="small muted">${det}${merma?`<br>+ ${num(merma)} % de merma`:''}</div>Costo de producción: ${fmt(cost)} · Ganancia ${fmt(price-cost)} · Margen ${pct(price-cost,price)}`;
+    $('costPreview').innerHTML=`<div class="small muted">${det}${merma?`<br>+ ${num(merma)} % de merma en lo que va en gramos (las unidades van exactas)`:''}</div>Costo de producción: ${fmt(cost)} · Ganancia ${fmt(price-cost)} · Margen ${pct(price-cost,price)}`;
   } else {
     cost=+$('pCost').value||0;
     $('costPreview').innerHTML=`Costo: ${fmt(cost)} · Ganancia ${fmt(price-cost)} · Margen ${pct(price-cost,price)}`;

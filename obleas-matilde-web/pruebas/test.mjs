@@ -9,6 +9,7 @@ await db.exec(`create role anon; create role authenticated; create schema extens
 const v1 = fs.readFileSync(dir + '/supabase.sql', 'utf8');
 const v2 = fs.readFileSync(dir + '/supabase-v2.sql', 'utf8');
 const v3 = fs.readFileSync(dir + '/supabase-v3.sql', 'utf8');
+const v4 = fs.readFileSync(dir + '/supabase-v4.sql', 'utf8');
 
 let ok = 0, bad = 0;
 const t = async (name, fn) => { try { const r = await fn(); console.log('OK  ', name, r === undefined ? '' : JSON.stringify(r).slice(0, 300)); ok++; } catch (e) { console.log('FAIL', name, e.message); bad++; } };
@@ -37,6 +38,15 @@ await db.exec(`update productos set tipo = 'adicional', categoria = 'Adicionales
                delete from recetas where insumo_id = 'ins-chispitas';`);
 await t('v3 se ejecuta', async () => { await db.exec(v3); });
 await t('v3 se ejecuta otra vez (idempotente)', async () => { await db.exec(v3); });
+// una oblea creada a mano (sin receta) también debe usar el paquete de galletas
+await db.exec(`insert into productos (id, nombre, categoria, tipo, precio) values ('meseros-oblea', 'Oblea solo Arequipe Meseros', 'Obleas', 'venta', 2000)`);
+await t('v4 se ejecuta', async () => { await db.exec(v4); });
+await t('v4 se ejecuta otra vez (idempotente)', async () => { await db.exec(v4); });
+await t('todas las obleas del menú usan 2 galletas', async () => {
+  const r = (await db.query(`select p.id, r.cantidad::int c from productos p left join recetas r on r.producto_id = p.id and r.insumo_id = 'ins-obleas'
+                             where p.tipo = 'venta' and p.nombre ilike '%oblea%' order by p.id`)).rows;
+  if (r.length !== 5 || r.some(x => x.c !== 2)) throw new Error(JSON.stringify(r)); return r.map(x => x.id);
+});
 await t('v3 devuelve Chispitas a insumo y repone su receta', async () => {
   const r = await q1(`select tipo, precio::int, contenido::int, (select count(*)::int from recetas where insumo_id = 'ins-chispitas') rec from productos where id = 'ins-chispitas'`);
   eq(r, { tipo: 'insumo', precio: 30000, contenido: 1000, rec: 1 }); return r;
@@ -46,7 +56,8 @@ await t('las 4 obleas existen y aceptan adicionales', async () => { const r = (a
 await t('estado', () => rpc('estado'));
 const cat = await rpc('catalogo');
 await t('catalogo: productos y adicionales (sin insumos)', async () => { if (cat.adicionales.some(a => a.id.startsWith('ins-'))) throw new Error('hay insumos en adicionales'); return { productos: cat.productos.length, adicionales: cat.adicionales.length }; });
-await t('costo oblea base ≈ 747.5', async () => { const r = await q1(`select round(public._costo_unit('oblea-arequipe'),2) c`); if (Math.abs(r.c - 747.5) > .01) throw new Error(r.c); return r.c; });
+// 2 galletas exactas ($340) + 25 g de arequipe con 15 % de merma ($356,5)
+await t('costo oblea base ≈ 696.5 (galletas sin merma)', async () => { const r = await q1(`select round(public._costo_unit('oblea-arequipe'),2) c`); if (Math.abs(r.c - 696.5) > .01) throw new Error(r.c); return r.c; });
 await t('costo adicional salsa ≈ 287.5', async () => { const r = await q1(`select round(public._costo_unit('add-salsa-mora'),2) c`); if (Math.abs(r.c - 287.5) > .01) throw new Error(r.c); return r.c; });
 
 await fails('anon no lee tablas', async () => { await db.exec('set role anon'); try { await db.query('select * from ventas'); } finally { await db.exec('reset role'); } }, 'permission denied');
@@ -95,6 +106,13 @@ await t('cobrar dos veces el mismo carrito guarda UNA venta', async () => {
 await fails('descuento sin código creado', () => rpc('registrar_venta', { p_pin: PIN, p_items: [{ id: 'boli-coco', qty: 1 }], p_pago: 'efectivo', p_descuento: 500, p_codigo: 'x' }), 'SIN_CODIGO_MESERO');
 await t('crear código meseros', () => rpc('admin_fijar_codigo_mesero', { p_clave: CLAVE, p_codigo: MESERO }));
 await fails('código mesero malo', () => rpc('verificar_mesero', { p_codigo: '111111' }), 'CODIGO_MESERO_INCORRECTO');
+await t('cada oblea vendida descuenta exactamente 2 galletas', async () => {
+  const g = async () => +(await q1(`select existencia from productos where id = 'ins-obleas'`)).existencia;
+  const a = await g();
+  const v = await rpc('registrar_venta', { p_pin: PIN, p_items: [{ id: 'oblea-arequipe', qty: 3 }, { id: 'oblea-3-salsas', qty: 2, adds: ['add-salsa-mora', 'add-salsa-durazno', 'add-salsa-maracuya'] }], p_pago: 'efectivo' });
+  eq(a - await g(), 10, 'galletas'); await rpc('admin_anular', { p_clave: CLAVE, p_uid: v.uid }); eq(await g(), a, 'anular las devuelve');
+  return 'gastó 10, anular las devolvió';
+});
 await t('código de mesero malo en la venta no toca el inventario', async () => {
   const a = await stockQ();
   try { await rpc('registrar_venta', { p_pin: PIN, p_items: [{ id: 'oblea-arequipe', qty: 1 }], p_pago: 'efectivo', p_descuento: 500, p_codigo: '000000' }); throw new Error('no falló'); }
