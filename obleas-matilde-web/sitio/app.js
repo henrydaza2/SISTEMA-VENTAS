@@ -349,7 +349,7 @@ function renderProducts(){
       <span class="prod-name">${esc(p.name)}</span>
       ${p.adds_ok&&S.adds.length?`<span class="prod-extra">${p.incl?`Elige ${plS(p.incl)} · + adicionales`:'+ salsas y adicionales'}</span>`:''}
       ${tracked(p)?`<span class="prod-stock ${low||out?'low':''}">${out?'Agotado':esc(left)+' disponibles'}</span>`
-        :p.alcanza!=null?`<span class="prod-stock ${p.alcanza<=p.min?'low':''}">Alcanza para ≈ ${esc(p.alcanza)}</span>`:''}
+        :p.alcanza!=null?`<span class="prod-stock ${p.alcanza<=p.min?'low':''}">≈ ${esc(p.alcanza)} disponibles</span>`:''}
       <span class="prod-foot"><span class="prod-price">${fmt(p.price)}</span>${inCart?`<span class="prod-qty">${inCart}</span>`:`<span class="prod-add">${icon('plus')}</span>`}</span>
     </button>`;
   }).join('') : `<div class="empty" style="grid-column:1/-1">${S.menu.length?'No hay productos que coincidan.':'Aún no hay productos a la venta.'}</div>`;
@@ -632,8 +632,10 @@ function renderInventory(){
       <button class="icon-btn del" data-del="${esc(p.id)}" aria-label="Eliminar ${esc(p.name)}" title="Eliminar">${icon('trash')}</button></div>`;
   const actTh = ro ? '' : '<th class="num"><span class="sr">Acciones</span></th>';
   const actTd = p => ro ? '' : `<td class="num">${actions(p)}</td>`;
-  const alc = p => p.alcanza!=null ? `<span class="${p.alcanza<=p.min?'badge low':''}">≈ ${esc(p.alcanza)}</span>`
-                 : (p.recipe||[]).length ? '<span class="badge mute">insumos sin contar</span>' : '—';
+  // Stock: si el producto tiene receta, se calcula solo con los insumos que quedan; si no, es el que se escribe a mano
+  const stockCell = p => tracked(p) ? (p.stock<=p.min?`<span class="badge low">${esc(p.stock)} · bajo</span>`:esc(p.stock))
+    : (p.recipe||[]).length ? (p.alcanza!=null ? `<span class="${p.alcanza<=p.min?'badge low':''}">≈ ${esc(p.alcanza)}</span><div class="pcat">según insumos</div>` : '<span class="badge mute">insumos sin contar</span>')
+    : '<span class="badge mute">sin control</span>';
   if(invFilter==='insumo'){
     $('invHint').textContent = ro ? 'Lo que queda de cada insumo y para cuántos productos alcanza.' : 'Cuando compres, presiona Compra: suma al inventario y actualiza el precio. Contar sirve para corregir lo que hay.';
     $('invHead').innerHTML=`<tr><th>Insumo</th><th class="num">Paquete</th>${ro?'':'<th class="num">Costo por unidad</th>'}<th class="num">Queda</th>${actTh}</tr>`;
@@ -650,9 +652,10 @@ function renderInventory(){
     }).join('') : '<tr><td colspan="5" class="empty">Sin insumos</td></tr>';
   } else {
     $('invHint').textContent = invFilter==='adicional' ? 'Los adicionales se ofrecen al vender productos que los aceptan (las obleas).'
-      : ro ? '"Alcanza para" es cuántos se pueden preparar con los insumos que quedan.' : 'El costo sale de la receta (insumos + merma) o del costo escrito a mano. "Alcanza para" es cuántos se pueden preparar con los insumos que quedan.';
+      : (ro ? '' : 'El costo sale de la receta (insumos + merma) o del costo escrito a mano. ')
+        + 'El stock de lo que tiene receta se calcula solo con los insumos que quedan. Las obleas comparten las galletas: el número dice cuántas salen de cada una si solo se hiciera esa.';
     const venta = invFilter==='venta';
-    $('invHead').innerHTML=`<tr><th>${venta?'Producto':'Adicional'}</th><th class="num">Precio</th>${ro?'':'<th class="num">Costo</th><th class="num">Ganancia</th><th class="num">Margen</th>'}${venta?'<th class="num">Stock</th><th class="num">Alcanza para</th>':''}${actTh}</tr>`;
+    $('invHead').innerHTML=`<tr><th>${venta?'Producto':'Adicional'}</th><th class="num">Precio</th>${ro?'':'<th class="num">Costo</th><th class="num">Ganancia</th><th class="num">Margen</th>'}${venta?'<th class="num">Stock</th>':''}${actTh}</tr>`;
     $('invBody').innerHTML = list.length ? list.map(p=>{
       const c=+p.unit_cost||0, g=p.price-c;
       return `<tr>
@@ -661,7 +664,7 @@ function renderInventory(){
         ${ro?'':`<td class="num">${c?fmt(c):'<span class="badge warn">Sin costo</span>'}</td>
         <td class="num ${g>=0?'pos-v':'neg-v'}">${fmt(g)}</td>
         <td class="num">${pct(g,p.price)}</td>`}
-        ${venta?`<td class="num">${tracked(p)?(p.stock<=p.min?`<span class="badge low">${esc(p.stock)} · bajo</span>`:esc(p.stock)):'<span class="badge mute">sin control</span>'}</td><td class="num">${alc(p)}</td>`:''}
+        ${venta?`<td class="num">${stockCell(p)}</td>`:''}
         ${actTd(p)}</tr>`;
     }).join('') : `<tr><td colspan="8" class="empty">Nada por aquí</td></tr>`;
   }
@@ -704,6 +707,11 @@ function syncType(){
   const t=$('pType').value;
   document.querySelectorAll('#prodForm [data-for]').forEach(el=>el.hidden=!el.dataset.for.split(' ').includes(t));
   if(t!=='insumo'){ $('pCostBox').hidden = recipeRowsData().length>0; }
+  const auto = t==='venta' && recipeRowsData().length>0;
+  $('pStock').disabled = auto;
+  if(auto) $('pStock').value='';
+  $('pStock').placeholder = auto ? 'Automático (según insumos)' : 'Sin control';
+  $('pStockHint').textContent = auto ? 'Se calcula solo con lo que queda de los insumos de la receta.' : 'Vacío = no se controla. Para sumar o restar usa "± Stock".';
   $('pMinInsHint').textContent = 'en '+({g:'gramos',ml:'mililitros',u:'unidades'}[$('pUnit').value]);
   updatePreview();
 }
@@ -781,7 +789,8 @@ $('prodForm').onsubmit=async e=>{
       min:parseInt($('pMin').value,10)||0,adds_ok:type==='venta'&&$('pAddsOk').checked,
       incl:type==='venta'?Math.max(0,parseInt($('pIncl').value,10)||0):0, salsa:type==='adicional'&&$('pSalsa').checked};
     // el stock solo se manda si es nuevo o si se cambió a mano: así no se pisan las ventas hechas mientras tanto
-    if(type==='venta' && (!data.id || sv!==$('pStock').dataset.orig)) data.stock = sv!=='' ? Math.max(0,parseInt(sv,10)||0) : null;
+    if(type==='venta' && data.recipe.length){ if($('pStock').dataset.orig!=='') data.stock=null; }   // con receta: stock automático, se quita el manual
+    else if(type==='venta' && (!data.id || sv!==$('pStock').dataset.orig)) data.stock = sv!=='' ? Math.max(0,parseInt(sv,10)||0) : null;
   }
   $('saveBtn').disabled=true;
   const ok=await run(()=>rpc('admin_guardar_producto',{p_clave:A.key,p_prod:data}), data.id?'Guardado':'Agregado');

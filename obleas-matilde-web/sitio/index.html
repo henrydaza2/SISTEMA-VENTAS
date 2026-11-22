@@ -735,7 +735,7 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
       <!-- venta / adicional -->
       <div class="field" data-for="venta adicional"><label for="pPrice">Precio de venta</label><input id="pPrice" class="input" type="number" min="0" step="any" inputmode="numeric"></div>
       <div class="field" data-for="venta adicional"><label for="pMerma">Merma (%)</label><input id="pMerma" class="input" type="number" min="0" step="any" inputmode="decimal"><div class="hint">Insumos extra por pérdida. No se suma a lo que va por unidades (galletas).</div></div>
-      <div class="field" data-for="venta"><label for="pStock">Stock</label><input id="pStock" class="input" type="number" step="1" placeholder="Sin control" inputmode="numeric"><div class="hint">Vacío = no se controla. Para sumar o restar usa "± Stock".</div></div>
+      <div class="field" data-for="venta"><label for="pStock">Stock</label><input id="pStock" class="input" type="number" step="1" placeholder="Sin control" inputmode="numeric"><div class="hint" id="pStockHint">Vacío = no se controla. Para sumar o restar usa "± Stock".</div></div>
       <div class="field" data-for="venta"><label for="pMin">Avisar si quedan</label><input id="pMin" class="input" type="number" min="0" step="1" inputmode="numeric"></div>
       <div class="field" data-for="venta"><label class="check"><input type="checkbox" id="pAddsOk">Acepta salsas y adicionales</label></div>
       <div class="field" data-for="venta"><label for="pIncl">Salsas incluidas en el precio</label><input id="pIncl" class="input" type="number" min="0" max="10" step="1" inputmode="numeric"><div class="hint">El cliente elige cuáles; las demás se cobran</div></div>
