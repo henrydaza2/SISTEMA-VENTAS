@@ -72,7 +72,7 @@ function errText(e){
   for(const k in map) if(m.includes(k)) return map[k];
   if(m.includes('SIN_STOCK')) return 'No hay suficiente stock de '+(m.split('SIN_STOCK:')[1]||'un producto').trim()+'.';
   if(isNetErr(m)) return 'Sin conexión. Revisa el internet e intenta de nuevo.';
-  if(m.includes('Could not find the function')||m.includes('PGRST202')) return 'Falta actualizar la base de datos (supabase-v3.sql).';
+  if(m.includes('Could not find the function')||m.includes('PGRST202')) return 'Falta actualizar la base de datos en Supabase (supabase-v3, v4 y v5).';
   return 'No se pudo completar. Intenta de nuevo.';
 }
 // quiet: no repite el aviso de "sin conexión" (para las actualizaciones automáticas)
@@ -98,7 +98,7 @@ async function loadMenu(){
   }catch(e){
     if(seq!==menuSeq) return;
     setSync(false,'Sin conexión');
-    if(!S.loaded) banner(errText(e).includes('supabase-v3') ? 'Falta actualizar la base de datos: ejecuta supabase-v3.sql en Supabase.' : 'No se pudo conectar con la base de datos. Revisa el internet y recarga la página.');
+    if(!S.loaded) banner(errText(e).includes('supabase-v3') ? 'Falta actualizar la base de datos: ejecuta supabase-v3, v4 y v5 en Supabase.' : 'No se pudo conectar con la base de datos. Revisa el internet y recarga la página.');
   }
   renderCaja(); renderProducts(); renderCart();
 }
@@ -164,8 +164,8 @@ function askForm({title, text, fields, ok='Aceptar', validate}){
 // =====================================================================
 //  Sesión de administrador
 // =====================================================================
-async function ensureAdmin(text){
-  if(A.key) return true;
+async function ensureAdmin(text, force){
+  if(A.key && !force) return true;
   if(!S.loaded){ toast('Sin conexión con la base de datos.'); return false; }
   const tryRpc = (fn,args) => async v => { try{ await rpc(fn, args(v)); return ''; }catch(e){ return errText(e); } };
   const pass = S.tieneClave
@@ -175,15 +175,17 @@ async function ensureAdmin(text){
   A.key=pass; A.role='admin'; A.pin=null; S.tieneClave=true; setRole();
   return true;
 }
+// al cambiar de quién está adentro, se olvida lo que se había cargado con la sesión anterior
+function clearData(){ A.products=[]; A.sales=[]; A.cajas=[]; A.consumo=[]; A.descDia=[]; A.descartes=[]; descLoaded=false; }
 // Inventario y Cierre: el administrador entra con su contraseña; un vendedor puede entrar
 // solo a mirar con su PIN (sin cambiar nada y sin ver costos ni el resultado de la caja)
-// force: pedir el código aunque ya haya una sesión abierta (la Caja lo pide siempre)
+// force: pedir el código aunque ya haya una sesión abierta (la Caja lo pide siempre).
+// La sesión anterior solo se reemplaza si el nuevo código es correcto; si se cancela, sigue igual.
 async function ensureView(text, force){
   if(!force && (A.key || A.role==='vend')) return true;
-  if(force){ A.key=null; A.role=null; A.pin=null; A.products=[]; A.sales=[]; A.cajas=[]; A.consumo=[]; setRole(); }
   if(!S.loaded){ toast('Sin conexión con la base de datos.'); return false; }
   const who = await askRole(text);
-  if(who==='admin') return ensureAdmin(text);
+  if(who==='admin'){ const ok = await ensureAdmin(text, force); if(ok && force) clearData(); return ok; }
   if(who!=='vend') return false;
   // el vendedor escribe su PIN cada vez que entra
   let data=null;
@@ -191,7 +193,7 @@ async function ensureView(text, force){
     check: async v=>{ try{ data=await rpc('vend_inventario',{p_pin:v}); return ''; }catch(e){ return errText(e); } }});
   if(pin===null) return false;
   if(!data){ try{ data=await rpc('vend_inventario',{p_pin:pin}); }catch(e){ toast(errText(e)); return false; } }
-  A.role='vend'; A.pin=pin; A.products=data||[]; setRole();
+  clearData(); A.key=null; A.role='vend'; A.pin=pin; A.products=data||[]; setRole();
   return true;
 }
 function askRole(text){
@@ -319,7 +321,7 @@ const findAdd = id => S.adds.find(x=>x.id===id);
 const lineKey = (id,adds) => id+'|'+adds.join(',');
 const MAXQ = 1000;      // tope por producto (igual que el servidor)
 let saleRef = null;     // identificador de la venta en curso: si se cobra dos veces sin señal, el servidor no la repite
-const newRef = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
+const newRef = () => crypto.randomUUID ? crypto.randomUUID() : [...crypto.getRandomValues(new Uint8Array(16))].map(b=>b.toString(16).padStart(2,'0')).join('');
 // Detalle de adicionales con precio: las primeras salsas elegidas van incluidas si el producto las trae
 function addsDetail(p, adds){
   let incl=p?.incl||0;
@@ -350,7 +352,7 @@ function renderProducts(){
     const left = tracked(p) ? p.stock-inCart : null;
     const out = tracked(p) && left<=0 && !editMode;
     const low = tracked(p) && left>0 && left<=p.min;
-    return `<button class="prod" style="--c:${catColor(p.cat)}" data-id="${esc(p.id)}" ${out?'disabled':''} aria-label="Agregar ${esc(p.name)}, ${fmt(p.price)}${out?', agotado':tracked(p)?`, ${esc(left)} disponibles`:''}${inCart?`, ${esc(inCart)} en la venta`:''}">
+    return `<button class="prod" style="--c:${catColor(p.cat)}" data-id="${esc(p.id)}" ${out?'disabled':''} aria-label="Agregar ${esc(p.name)}, ${fmt(p.price)}${out?', agotado':tracked(p)?`, ${esc(left)} disponibles`:p.alcanza!=null?`, unas ${esc(p.alcanza)} disponibles`:''}${inCart?`, ${esc(inCart)} en la venta`:''}">
       <span class="prod-cat">${esc(p.cat||'')}</span>
       <span class="prod-name">${esc(p.name)}</span>
       ${p.adds_ok&&S.adds.length?`<span class="prod-extra">${p.incl?`Elige ${plS(p.incl)} · + adicionales`:'+ salsas y adicionales'}</span>`:''}
@@ -857,6 +859,7 @@ const costoBase = p => p.type==='insumo' ? unitCostIns(p) : (p.recipe||[]).lengt
   : (+p.cost||0);
 async function loadDescartes(){
   if(!A.key) return;
+  if(!descLoaded && $('descHasta').value < bogotaDay()){ $('descDesde').value=firstOfMonth(); $('descHasta').value=bogotaDay(); }
   const r=await run(()=>rpc('admin_descartes',{p_clave:A.key,p_desde:$('descDesde').value||null,p_hasta:$('descHasta').value||null}));
   if(r!==false){ A.descartes=r||[]; descLoaded=true; }
   renderDescartes();

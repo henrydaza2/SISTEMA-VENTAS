@@ -116,6 +116,8 @@ Supabase (PostgreSQL)
 - La sesión de administrador solo vive en memoria y se cierra al volver a Vender. Al editar una venta, la contraseña se pide de nuevo al guardar; no queda guardada en la pantalla de vender.
 - El PIN de vendedor se recuerda solo mientras la pestaña esté abierta (`sessionStorage`).
 - Todo texto o número que se inserta en la página pasa por `esc()` o por funciones que solo devuelven números (`fmt`, `num`, `qtyU`, `pad3`).
+- Al elegir Transferencia se muestra la llave `@NEQUIZHA210` (constante `LLAVE_TRANSFERENCIA` al inicio de `app.js`).
+- Caja pide código cada vez; si se cancela, la sesión que había sigue igual.
 - Cada cobro lleva un identificador (`crypto.randomUUID()`): si se corta la señal y se presiona Cobrar otra vez, la venta no se repite.
 - Script de Supabase con `integrity` (SRI) y política CSP en `_headers`. Si se cambia la versión de supabase-js, hay que recalcular el `integrity`.
 - Botones de 44 px como mínimo; en el celular, la hoja de venta cerrada queda `inert`.
