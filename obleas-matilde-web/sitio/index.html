@@ -124,6 +124,12 @@ main{padding:28px 32px 48px;min-width:0}
 .notice .t{flex:1;min-width:200px}
 .notice.edit{background:var(--transfer-soft);border-color:transparent;color:var(--ink)}
 .notice.warn{background:var(--brand-soft);border-color:transparent;color:var(--ink)}
+/* llave de transferencia */
+.cashbox.transferbox{background:var(--transfer-soft);color:var(--ink)}
+.transferbox .tk-lbl{font-size:13px;font-weight:700;color:var(--transfer)}
+.transferbox .tk-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:4px 0 6px}
+.transferbox .tk-row b{font-family:"Fredoka",system-ui,sans-serif;font-size:22px;letter-spacing:.02em;word-break:break-all}
+#invCats{margin:0 0 12px}
 /* subcategorías en Inventario */
 #invBody tr.grp td{background:var(--surface-2);font-weight:800;font-size:14px;padding:8px 10px}
 #invBody tr.grp .n{color:var(--muted);font-weight:700;margin-left:4px}
@@ -544,6 +550,11 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
             <div class="quick" id="quick"></div>
             <div class="change" id="change" aria-live="polite"></div>
           </div>
+          <div class="cashbox transferbox" id="transferBox" hidden>
+            <div class="tk-lbl">Llave para transferir</div>
+            <div class="tk-row"><b id="tkValue"></b><button type="button" class="btn ghost sm" id="tkCopy"><svg class="i"><use href="#i-check"/></svg>Copiar</button></div>
+            <div class="small">Confirma que llegó la transferencia antes de cobrar.</div>
+          </div>
           <button class="btn lg block" id="checkout" disabled><svg class="i"><use href="#i-check"/></svg><span id="checkoutTxt">Cobrar</span></button>
           <button class="lastrc" id="lastReceipt" hidden><svg class="i"><use href="#i-print"/></svg>Recibo de la última venta</button>
         </aside>
@@ -570,6 +581,7 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
             <button data-f="descarte" aria-pressed="false">Descartes</button>
           </div>
         </div>
+        <div class="chips" id="invCats" role="group" aria-label="Filtrar por categoría" hidden></div>
         <p class="muted small" id="invHint" style="margin:-4px 0 12px"></p>
         <div class="table-wrap" id="invTableWrap">
           <table class="rt">

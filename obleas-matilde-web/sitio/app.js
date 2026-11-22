@@ -5,6 +5,7 @@ const S = { menu:[], adds:[], loaded:false, tieneClave:false, pidePin:false, pid
 const A = { key:null, role:null, pin:null, products:[], sales:[], cajas:[], consumo:[] };     // sesión de administrador (solo en memoria)
 let sb = null;
 const SHOP = 'OBLEAS MATILDE';
+const LLAVE_TRANSFERENCIA = '@NEQUIZHA210';     // la llave que se muestra al elegir Transferencia
 const ADMIN_TABS = { inventario:'Para entrar al inventario.', cierre:'Para entrar a la caja. Siempre se pide el código.', ajustes:'Para entrar a los ajustes.' };
 
 const $ = id => document.getElementById(id);
@@ -437,6 +438,7 @@ function renderCart(){
   $('cartTotal').textContent=fmt(t);
   document.querySelectorAll('.pay button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.pay===pay));
   $('cashBox').hidden = pay!=='efectivo';
+  $('transferBox').hidden = pay!=='transferencia';
   const bills=[2000,5000,10000,20000,50000,100000].filter(b=>b>t).slice(0,4);
   $('quick').innerHTML = t ? [`<button data-v="${t}">Exacto</button>`,...bills.map(b=>`<button data-v="${b}">${fmt(b)}</button>`)].join('') : '';
   $('quick').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('received').value=b.dataset.v;renderCart();});
@@ -463,6 +465,11 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape' && $('cartPanel').
 $('cartBar').onclick=openSheet; $('closeSheet').onclick=closeSheet; $('backdrop').onclick=closeSheet;
 document.querySelectorAll('.pay button').forEach(b=>b.onclick=()=>{pay=b.dataset.pay;saleRef=null;renderCart();});
 $('received').oninput = renderCart;
+$('tkValue').textContent = LLAVE_TRANSFERENCIA;
+$('tkCopy').onclick = async()=>{
+  try{ await navigator.clipboard.writeText(LLAVE_TRANSFERENCIA); toast('Llave copiada'); }
+  catch(e){ const r=document.createRange(); r.selectNodeContents($('tkValue')); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r); toast('Selecciona y copia la llave'); }
+};
 $('search').oninput = renderProducts;
 function resetSale(){ cart={}; pay=null; discount=null; saleRef=null; $('received').value=''; }
 $('clearCart').onclick = ()=>{ resetSale(); renderCart(); renderProducts(); };
@@ -582,7 +589,7 @@ $('rcPrint').onclick=()=>printReceipt(rcSale);
 // =====================================================================
 //  Inventario (administrador)
 // =====================================================================
-let invFilter='venta';
+let invFilter='venta', invCat='Todas';
 const findA = id => A.products.find(x=>x.id===id);
 const insumos = () => A.products.filter(p=>p.type==='insumo');
 const unitCostIns = i => (+i.content>0) ? (+i.price)/(+i.content) : 0;
@@ -631,7 +638,18 @@ function renderInventory(){
   const n=t=>A.products.filter(p=>p.type===t).length;
   $('invSub').textContent=`${n('venta')} productos · ${n('adicional')} adicionales · ${n('insumo')} insumos`;
   const q=$('invSearch').value.toLowerCase();
-  const list=A.products.filter(p=>p.type===invFilter && (p.name+' '+(p.cat||'')).toLowerCase().includes(q))
+  // chips de categoría (solo en "Para vender")
+  const ventaCats=[...new Set(A.products.filter(p=>p.type==='venta').map(p=>p.cat||'Sin categoría'))]
+    .sort((a,b)=>(/oblea/i.test(b)-/oblea/i.test(a))||a.localeCompare(b));
+  if(invCat!=='Todas' && !ventaCats.includes(invCat)) invCat='Todas';
+  const showCats = invFilter==='venta' && ventaCats.length>1;
+  $('invCats').hidden=!showCats;
+  if(showCats){
+    const cnt=c=>A.products.filter(p=>p.type==='venta'&&(c==='Todas'||(p.cat||'Sin categoría')===c)).length;
+    $('invCats').innerHTML=['Todas',...ventaCats].map(c=>`<button class="chip" aria-pressed="${c===invCat}" data-c="${esc(c)}">${esc(c)} <span class="n">${cnt(c)}</span></button>`).join('');
+    $('invCats').querySelectorAll('.chip').forEach(b=>b.onclick=()=>{ invCat=b.dataset.c; renderInventory(); });
+  }
+  const list=A.products.filter(p=>p.type===invFilter && (invFilter!=='venta'||invCat==='Todas'||(p.cat||'Sin categoría')===invCat) && (p.name+' '+(p.cat||'')).toLowerCase().includes(q))
     .sort((a,b)=>(/oblea/i.test(b.cat||'')-/oblea/i.test(a.cat||''))||(a.cat||'').localeCompare(b.cat||'')||a.name.localeCompare(b.name));   // obleas primero
   const ro = A.role==='vend';
   const actions = p => ro ? '' : `<div class="actions">
