@@ -111,7 +111,7 @@ Supabase (PostgreSQL)
 |---|---|---|
 | **Productos** (antes Vender) | Productos por categoría, ventana de salsas y adicionales, carrito, descuento de meseros, cobro, ventana "Venta registrada", recibo imprimible de 80 mm | PIN |
 | **Inventario** | Pestañas Para vender (por categorías, se pueden crear nuevas), Adicionales, Insumos y Descartes; recetas, merma, costo y margen; compras y conteo de insumos | Contraseña |
-| **Caja** (antes Cierre del día; pide código cada vez que se entra) | Totales, ganancia, caja (cuadra / falta / sobra), unidades vendidas, ganancia por producto, insumos usados, editar y anular ventas, CSV | Contraseña |
+| **Caja** (antes Cierre del día; pide código cada vez que se entra; el administrador puede corregir o reabrir una caja cerrada y queda anotado) | Totales, ganancia, caja (cuadra / falta / sobra), unidades vendidas, ganancia por producto, insumos usados, editar y anular ventas, CSV | Contraseña |
 | **Ajustes** | PIN, código de meseros, contraseña y respaldos | Contraseña |
 
 **Detalles técnicos:**
@@ -146,7 +146,7 @@ node test.mjs ..
 node server.mjs ..
 ```
 
-- `test.mjs` (o `npm test`) corre **95 pruebas** de la base de datos (v1 a v5); `pagina.mjs` corre **13 pruebas de la página** en Edge sin ventana (vender, caja, inventario, descartes, vendedores, llave, bloqueo, XSS y que nada se salga en el celular). `npm test` corre las dos en un Postgres local (PGlite). Todas pasan. Termina con error si alguna falla.
+- `test.mjs` (o `npm test`) corre **99 pruebas** de la base de datos (v1 a v5); `pagina.mjs` corre **14 pruebas de la página** en Edge sin ventana (vender, caja, inventario, descartes, vendedores, llave, bloqueo, XSS y que nada se salga en el celular). `npm test` corre las dos en un Postgres local (PGlite). Todas pasan. Termina con error si alguna falla.
 - `server.mjs` levanta http://localhost:8787 (solo para este computador) con la página real, las reglas de `_headers` y una base de datos de prueba. Claves de prueba: vendedor "Vendedor de prueba" con contraseña `654321`, código de meseros `777777`, contraseña `admin123`.
 - Nada de esto toca la página ni la base de datos reales.
 

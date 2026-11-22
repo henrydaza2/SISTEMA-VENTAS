@@ -17,6 +17,7 @@
 --  - Galletas automáticas solo para la categoría Obleas (no por el nombre).
 --  - La llave de transferencia se cambia desde Ajustes.
 --  - Costos y "alcanza para" se calculan solo en la base (la página los usa).
+--  - El administrador puede corregir o reabrir una caja ya cerrada (queda anotado).
 --
 --  Va después de supabase-v4.sql. No cambia precios ni borra ventas.
 --  Pega TODO en Supabase > SQL Editor y presiona "Run". Se puede ejecutar dos veces.
@@ -502,6 +503,77 @@ grant execute on function public.estado(), public.registrar_venta(text, jsonb, t
 revoke all on function public._descarte_json(public.descartes) from public, anon, authenticated;
 grant execute on function public.admin_descartar(text, text, numeric, text), public.admin_descartes(text, date, date),
                           public.admin_anular_descarte(text, uuid), public.admin_respaldo(text)
+  to anon, authenticated;
+
+-- =====================================================================
+--  Correcciones a una caja ya cerrada (solo el administrador)
+--  - Corregir: base, efectivo contado y notas. "Debería haber" se recalcula.
+--  - Reabrir: la caja vuelve a quedar abierta (si no hay otra abierta).
+--  Cada cambio queda anotado en la caja (cuándo, qué había antes y qué quedó).
+--  Se puede ejecutar más de una vez.
+-- =====================================================================
+do $caja_correcciones$
+begin
+alter table public.cajas add column if not exists corregida    timestamptz;
+alter table public.cajas add column if not exists correcciones jsonb not null default '[]'::jsonb;
+end
+$caja_correcciones$;
+
+create or replace function public._caja_json(c public.cajas, completo boolean) returns jsonb
+language sql stable set search_path = public, pg_temp as $$
+  select jsonb_build_object('id', c.id, 'abierta', c.cerrada_en is null, 'desde', c.abierta_en, 'dia', c.dia)
+  || case when completo then jsonb_build_object(
+       'base', c.base, 'hasta', c.cerrada_en, 'contado', c.contado, 'esperado_al_cerrar', c.esperado, 'notas', c.notas,
+       'corregida', c.corregida, 'correcciones', c.correcciones,
+       'efectivo',      (select coalesce(sum(total), 0) from ventas where caja_id = c.id and not anulada and pago = 'efectivo'),
+       'transferencia', (select coalesce(sum(total), 0) from ventas where caja_id = c.id and not anulada and pago = 'transferencia'),
+       'ventas',        (select count(*) from ventas where caja_id = c.id and not anulada))
+     else '{}'::jsonb end
+$$;
+
+-- Corregir una caja cerrada. Lo que llegue vacío (null) se deja como estaba.
+create or replace function public.admin_corregir_caja(p_clave text, p_id uuid, p_base numeric, p_contado numeric, p_notas text)
+returns jsonb language plpgsql security definer set search_path = public, extensions, pg_temp as $$
+declare e text := _acceso('admin', p_clave); c cajas%rowtype; v_base numeric; v_contado numeric; v_notas text;
+begin
+  if e is not null then return _err(e); end if;
+  select * into c from cajas where id = p_id for update;
+  if not found then raise exception 'CAJA_NO_EXISTE'; end if;
+  if c.cerrada_en is null then raise exception 'CAJA_ABIERTA'; end if;
+  if p_base is not null and (p_base < 0 or p_base > 10000000) then raise exception 'VALOR_INVALIDO'; end if;
+  if p_contado is not null and (p_contado < 0 or p_contado > 100000000) then raise exception 'VALOR_INVALIDO'; end if;
+  v_base := coalesce(p_base, c.base);
+  v_contado := coalesce(p_contado, c.contado);
+  v_notas := coalesce(left(p_notas, 500), c.notas);
+  update cajas set base = v_base, contado = v_contado, notas = v_notas,
+         esperado = v_base + (select coalesce(sum(total), 0) from ventas where caja_id = c.id and not anulada and pago = 'efectivo'),
+         corregida = now(),
+         correcciones = correcciones || jsonb_build_object('fecha', now(), 'tipo', 'corrección',
+           'antes',   jsonb_build_object('base', c.base, 'contado', c.contado, 'notas', c.notas),
+           'despues', jsonb_build_object('base', v_base, 'contado', v_contado, 'notas', v_notas))
+   where id = c.id returning * into c;
+  return _caja_json(c, true);
+end $$;
+
+-- Reabrir una caja cerrada por error (solo si no hay otra caja abierta)
+create or replace function public.admin_reabrir_caja(p_clave text, p_id uuid) returns jsonb
+language plpgsql security definer set search_path = public, extensions, pg_temp as $$
+declare e text := _acceso('admin', p_clave); c cajas%rowtype;
+begin
+  if e is not null then return _err(e); end if;
+  select * into c from cajas where id = p_id for update;
+  if not found then raise exception 'CAJA_NO_EXISTE'; end if;
+  if c.cerrada_en is null then return _caja_json(c, true); end if;
+  if exists (select 1 from cajas where cerrada_en is null) then raise exception 'CAJA_YA_ABIERTA'; end if;
+  update cajas set cerrada_en = null, contado = null, esperado = null, corregida = now(),
+         correcciones = correcciones || jsonb_build_object('fecha', now(), 'tipo', 'reabierta',
+           'antes', jsonb_build_object('cerrada_en', c.cerrada_en, 'contado', c.contado, 'notas', c.notas))
+   where id = c.id returning * into c;
+  return _caja_json(c, true);
+end $$;
+
+revoke all on function public._caja_json(public.cajas, boolean) from public, anon, authenticated;
+grant execute on function public.admin_corregir_caja(text, uuid, numeric, numeric, text), public.admin_reabrir_caja(text, uuid)
   to anon, authenticated;
 
 notify pgrst, 'reload schema';

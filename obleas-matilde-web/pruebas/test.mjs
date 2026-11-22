@@ -188,6 +188,25 @@ await t('una venta pasada la medianoche queda en el día de la caja', async () =
 await fails('cerrar caja con PIN malo', () => rpc('cerrar_caja', { p_pin: '1', p_contado: 0 }), 'PIN_INCORRECTO');
 await t('cerrar caja (contó 49.000)', () => rpc('cerrar_caja', { p_pin: PIN, p_contado: 49000, p_notas: 'faltó un billete' }));
 await t('admin_cajas', async () => { const c = await rpc('admin_cajas', { p_clave: CLAVE, p_dia: null }); return c.map(x => ({ base: x.base, efectivo: x.efectivo, contado: x.contado, abierta: x.abierta })); });
+await t('corregir una caja cerrada: cambia lo contado, recalcula y queda anotado', async () => {
+  const c = (await rpc('admin_cajas', { p_clave: CLAVE, p_dia: null })).find(x => !x.abierta && +x.contado === 49000);
+  const r = await rpc('admin_corregir_caja', { p_clave: CLAVE, p_id: c.id, p_base: null, p_contado: 61000, p_notas: 'se contó mal' });
+  eq(+r.contado, 61000, 'contado'); eq(+r.base, +c.base, 'base igual'); eq(r.notas, 'se contó mal', 'notas');
+  eq(+r.esperado_al_cerrar, +c.base + +c.efectivo, 'debería haber');
+  eq(r.correcciones.length, 1, 'anotada'); eq(+r.correcciones[0].antes.contado, 49000, 'antes');
+  return { contado: r.contado, corregida: !!r.corregida };
+});
+await fails('el vendedor no puede corregir una caja', () => rpc('admin_corregir_caja', { p_clave: PIN, p_id: '00000000-0000-0000-0000-000000000000', p_base: 1, p_contado: 1, p_notas: '' }), 'CLAVE_INCORRECTA');
+await fails('no se corrige una caja que no existe', () => rpc('admin_corregir_caja', { p_clave: CLAVE, p_id: '00000000-0000-0000-0000-000000000000', p_base: 1, p_contado: 1, p_notas: '' }), 'CAJA_NO_EXISTE');
+await t('reabrir una caja cerrada y volver a cerrarla', async () => {
+  const c = (await rpc('admin_cajas', { p_clave: CLAVE, p_dia: null })).find(x => !x.abierta && +x.contado === 61000);
+  const r = await rpc('admin_reabrir_caja', { p_clave: CLAVE, p_id: c.id });
+  eq(r.abierta, true, 'abierta'); eq(r.correcciones.length, 2, 'anotada');
+  eq((await rpc('estado')).caja.abierta, true, 'estado');
+  await rpc('cerrar_caja', { p_pin: PIN, p_contado: 61000 });
+  return 'ok';
+});
+await db.exec(`delete from intentos`);
 await t('admin_ventas con costos y consumo', async () => { const v = await rpc('admin_ventas', { p_clave: CLAVE, p_dia: null }); return v.length; });
 
 // --- galletas automáticas, estimado y vista de vendedor (v4) ---

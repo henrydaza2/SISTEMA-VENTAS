@@ -64,6 +64,7 @@ function errText(e){
     PRODUCTO_NO_EXISTE:'Un producto ya no existe. Actualiza la página.', VENTA_ANULADA:'Esa venta está anulada.', VENTA_NO_EXISTE:'Esa venta ya no existe.',
     VENTA_VACIA:'La venta no tiene productos.', PAGO_INVALIDO:'Elige el método de pago.', VALOR_INVALIDO:'Hay un valor fuera de lo permitido.',
     DESCARTE_NO_EXISTE:'Ese descarte ya no existe.',
+    CAJA_NO_EXISTE:'Esa caja ya no existe.', CAJA_ABIERTA:'La caja sigue abierta: ciérrala primero.',
     NO_CAMBIAR_TIPO:'No se puede cambiar el tipo de un producto que ya existe. Crea uno nuevo.',
     YA_EXISTE_CLAVE:'La contraseña ya fue creada desde otro dispositivo.', CLAVE_CORTA:'La contraseña debe tener al menos 8 caracteres.',
     PIN_CORTO:'Debe tener al menos 6 caracteres.', CANTIDAD_INVALIDA:'Cantidad no válida.', NOMBRE_VACIO:'Escribe un nombre.',
@@ -966,14 +967,32 @@ function renderClose(){
   const ro = A.role==='vend';
   $('cajasHead').innerHTML = ro
     ? '<tr><th>Abierta</th><th>Cerrada</th><th class="num">Base</th><th class="num">Ventas efectivo</th><th class="num">Transferencias</th><th>Estado</th></tr>'
-    : '<tr><th>Abierta</th><th>Cerrada</th><th class="num">Base</th><th class="num">Ventas efectivo</th><th class="num">Debería haber</th><th class="num">Contado</th><th>Resultado</th></tr>';
-  $('cajasBody').innerHTML = !A.cajas.length ? '<tr><td colspan="7" class="empty">No se abrió caja este día</td></tr>'
+    : '<tr><th>Abierta</th><th>Cerrada</th><th class="num">Base</th><th class="num">Ventas efectivo</th><th class="num">Debería haber</th><th class="num">Contado</th><th>Resultado</th><th><span class="sr">Acciones</span></th></tr>';
+  $('cajasBody').innerHTML = !A.cajas.length ? '<tr><td colspan="8" class="empty">No se abrió caja este día</td></tr>'
     : ro ? A.cajas.map(c=>`<tr><td>${fTime(c.desde)}</td><td>${c.hasta?fTime(c.hasta):'—'}</td><td class="num">${fmt(c.base)}</td><td class="num">${fmt(c.efectivo)}</td><td class="num">${fmt(c.transferencia)}</td><td>${c.abierta?'<span class="badge warn">Abierta</span>':'<span class="badge mute">Cerrada</span>'}</td></tr>`).join('')
     : A.cajas.map(c=>{
     const esperado=+c.base + +c.efectivo, diff=c.abierta?null:(+c.contado - esperado);
     const res = c.abierta ? '<span class="badge warn">Abierta</span>' : diff===0 ? '<span class="badge ok">Cuadra</span>' : diff<0 ? `<span class="badge low">Falta ${fmt(-diff)}</span>` : `<span class="badge transfer">Sobra ${fmt(diff)}</span>`;
-    return `<tr><td>${fTime(c.desde)}</td><td>${c.hasta?fTime(c.hasta):'—'}</td><td class="num">${fmt(c.base)}</td><td class="num">${fmt(c.efectivo)}</td><td class="num"><b>${fmt(esperado)}</b></td><td class="num">${c.abierta?'—':fmt(c.contado)}</td><td>${res}${c.notas?`<div class="pcat">${esc(c.notas)}</div>`:''}</td></tr>`;
+    const corr = c.corregida ? `<div class="pcat">Corregida ${fDate(c.corregida)} ${fTime(c.corregida)} (${esc((c.correcciones||[]).length)} ${(c.correcciones||[]).length===1?'cambio':'cambios'})</div>` : '';
+    return `<tr><td>${fTime(c.desde)}</td><td>${c.hasta?fTime(c.hasta):'—'}</td><td class="num">${fmt(c.base)}</td><td class="num">${fmt(c.efectivo)}</td><td class="num"><b>${fmt(esperado)}</b></td><td class="num">${c.abierta?'—':fmt(c.contado)}</td><td>${res}${c.notas?`<div class="pcat">${esc(c.notas)}</div>`:''}${corr}</td>
+      <td class="num">${c.abierta?'':`<div class="actions"><button class="btn ghost sm" data-cfix="${esc(c.id)}">${icon('edit')}Corregir</button><button class="btn ghost sm" data-copen="${esc(c.id)}">Reabrir</button></div>`}</td></tr>`;
   }).join('');
+  // Correcciones a una caja ya cerrada (solo administrador; quedan anotadas en la caja)
+  const cajaDe = id => A.cajas.find(x=>x.id===id);
+  $('cajasBody').querySelectorAll('[data-cfix]').forEach(b=>b.onclick=async()=>{
+    const c=cajaDe(b.dataset.cfix); if(!c) return;
+    const v=await askForm({title:'Corregir cierre de caja', text:`Caja abierta a las ${fTime(c.desde)}. Ventas en efectivo: ${fmt(c.efectivo)}. Corrige lo que se haya escrito mal.`, ok:'Guardar corrección',
+      fields:[{id:'base',label:'Efectivo inicial (base)',value:+c.base,min:0,step:'1'},{id:'contado',label:'Efectivo contado al cerrar',value:+c.contado,min:0,step:'1'},
+              {id:'notas',label:'Notas',type:'text',value:c.notas||'',placeholder:'Ej: se contó mal un billete'}],
+      validate:x=> x.base==null||x.contado==null ? 'Escribe la base y lo contado.' : (x.base<0||x.contado<0 ? 'No puede ser negativo.' : '')});
+    if(!v) return;
+    if(await run(()=>rpc('admin_corregir_caja',{p_clave:A.key,p_id:c.id,p_base:v.base,p_contado:v.contado,p_notas:v.notas}),'Cierre corregido')) loadSales();
+  });
+  $('cajasBody').querySelectorAll('[data-copen]').forEach(b=>b.onclick=async()=>{
+    const c=cajaDe(b.dataset.copen); if(!c) return;
+    if(!await askConfirm('Reabrir caja',`La caja abierta a las ${fTime(c.desde)} vuelve a quedar abierta para seguir vendiendo. Lo contado se borra y habrá que cerrarla de nuevo.`,'Reabrir')) return;
+    if(await run(()=>rpc('admin_reabrir_caja',{p_clave:A.key,p_id:c.id}),'Caja reabierta')){ loadSales(); loadMenu(); }
+  });
 
   // Unidades vendidas
   const groups={}; let addsN=0;

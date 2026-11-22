@@ -169,7 +169,24 @@ try {
     return 'Luis';
   });
 
+  await t('cerrar la caja y luego corregir el cierre como administrador', async () => {
+    await tab('vender');
+    await page.click('#closeCajaBtn');
+    await page.fill('#fm_contado', '40000'); await page.click('#fmOk');
+    await page.waitForSelector('#cajaClosed:not([hidden])');
+    await tab('cierre'); await quien('admin'); await secreto('admin123');
+    await page.waitForSelector('[data-cfix]');
+    const antes = await page.textContent('#cajasBody');
+    await page.click('[data-cfix]');
+    await page.fill('#fm_contado', '54500'); await page.fill('#fm_notas', 'se contó mal'); await page.click('#fmOk');
+    await page.waitForFunction(() => document.getElementById('cajasBody').textContent.includes('Corregida'));
+    const despues = await page.textContent('#cajasBody');
+    if (!/Cuadra|Sobra|Falta/.test(despues)) throw new Error('sin resultado');
+    return { antes: antes.match(/(Cuadra|Falta[^C]*|Sobra[^C]*)/)?.[0]?.trim(), despues: despues.match(/(Cuadra|Falta[^C]*|Sobra[^C]*)/)?.[0]?.trim() };
+  });
+
   await t('5 contraseñas malas bloquean este dispositivo', async () => {
+    await tab('vender');      // al volver a Productos se cierra la sesión: Ajustes pedirá la contraseña
     await tab('ajustes');
     for (let i = 0; i < 5; i++) { await secreto('mala' + i); await page.waitForFunction(() => document.getElementById('pwErr').textContent.length > 0); }
     await secreto('admin123');
