@@ -124,6 +124,15 @@ main{padding:28px 32px 48px;min-width:0}
 .notice .t{flex:1;min-width:200px}
 .notice.edit{background:var(--transfer-soft);border-color:transparent;color:var(--ink)}
 .notice.warn{background:var(--brand-soft);border-color:transparent;color:var(--ink)}
+/* modo vendedor: solo lectura */
+.ro-only{display:none!important}
+body.ro .ro-only{display:inline-flex!important}
+body.ro .admin-only,body.ro #newProd,body.ro #csvBtn,body.ro [data-ed],body.ro [data-void],body.ro #invAlert{display:none!important}
+body.ro .adminbar{background:var(--surface-2)}
+body.ro .adminbar svg{color:var(--muted)}
+.role-btns{display:grid;gap:10px}
+.role-btns .btn{justify-content:flex-start;text-align:left;height:auto;padding:12px 16px}
+.role-btns .btn small{display:block;font-weight:600;opacity:.85}
 .notice.warn > svg{color:var(--brand)}
 .notice .names{font-size:14px;margin-top:2px}
 .pos{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:24px;align-items:start}
@@ -531,7 +540,7 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
     <!-- ===================== INVENTARIO ===================== -->
     <section class="page" id="page-inventario">
       <div class="page-head">
-        <div><h1>Inventario</h1><p id="invSub">Productos, adicionales e insumos</p></div>
+        <div><h1>Inventario <span class="badge mute ro-only">Solo ver</span></h1><p id="invSub">Productos, adicionales e insumos</p></div>
         <button class="btn" id="newProd"><svg class="i"><use href="#i-plus"/></svg>Nuevo</button>
       </div>
       <div class="adminbar"><div class="msg"><svg class="i"><use href="#i-unlock"/></svg>Sesión de administrador abierta</div><button class="btn ghost sm" data-lock><svg class="i"><use href="#i-lock"/></svg>Bloquear</button></div>
@@ -558,7 +567,7 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
     <!-- ===================== CIERRE ===================== -->
     <section class="page" id="page-cierre">
       <div class="page-head">
-        <div><h1>Cierre del día</h1><p id="closeTitle"></p></div>
+        <div><h1>Cierre del día <span class="badge mute ro-only">Solo ver</span></h1><p id="closeTitle"></p></div>
         <div class="toolbar" style="margin:0">
           <label for="closeDate" class="sr">Fecha</label><input type="date" id="closeDate" class="input" style="width:auto">
           <button class="btn ghost sm" id="refreshBtn"><svg class="i"><use href="#i-refresh"/></svg>Actualizar</button>
@@ -570,14 +579,14 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
         <div class="stat sum"><div class="k"><span class="ico"><svg class="i"><use href="#i-sum"/></svg></span>Total vendido</div><div class="v" id="sTotal">$0</div><div class="s" id="sTotalN"></div></div>
         <div class="stat cash"><div class="k"><span class="ico"><svg class="i"><use href="#i-cash"/></svg></span>Efectivo</div><div class="v" id="sCash">$0</div><div class="s" id="sCashN"></div></div>
         <div class="stat transfer"><div class="k"><span class="ico"><svg class="i"><use href="#i-phone"/></svg></span>Transferencia</div><div class="v" id="sTransfer">$0</div><div class="s" id="sTransferN"></div></div>
-        <div class="stat profit"><div class="k"><span class="ico"><svg class="i"><use href="#i-trend"/></svg></span>Ganancia</div><div class="v" id="sProfit">$0</div><div class="s" id="sProfitN"></div></div>
+        <div class="stat profit admin-only"><div class="k"><span class="ico"><svg class="i"><use href="#i-trend"/></svg></span>Ganancia</div><div class="v" id="sProfit">$0</div><div class="s" id="sProfitN"></div></div>
       </div>
       <div class="stack">
         <div class="card">
           <h2>Caja</h2>
           <div class="table-wrap">
             <table class="rt">
-              <thead><tr><th>Abierta</th><th>Cerrada</th><th class="num">Base</th><th class="num">Ventas efectivo</th><th class="num">Debería haber</th><th class="num">Contado</th><th>Resultado</th></tr></thead>
+              <thead id="cajasHead"></thead>
               <tbody id="cajasBody"></tbody>
             </table>
           </div>
@@ -596,7 +605,7 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
               </table>
             </div>
           </div>
-          <div class="card">
+          <div class="card admin-only">
             <h2>Ganancia por producto</h2>
             <div class="table-wrap">
               <table class="rt">
@@ -611,7 +620,7 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
           <h2>Insumos usados</h2>
           <div class="table-wrap">
             <table class="rt">
-              <thead><tr><th>Insumo</th><th class="num">Cantidad usada</th><th class="num">Costo</th><th class="num">Queda</th></tr></thead>
+              <thead id="usedHead"></thead>
               <tbody id="usedBody"></tbody>
             </table>
           </div>
@@ -682,6 +691,18 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
     </div>
   </div>
   <div class="dlg-foot"><button type="button" class="btn ghost" id="addsCancel">Cancelar</button><button type="button" class="btn" id="addsOk"><svg class="i"><use href="#i-cart-plus"/></svg>Agregar</button></div>
+</dialog>
+
+<!-- Quién entra a Inventario o Cierre -->
+<dialog id="roleDialog" class="narrow" aria-labelledby="roleTitle">
+  <div class="dlg-head"><h2 id="roleTitle">¿Quién va a entrar?</h2><button type="button" class="icon-btn" id="roleClose" aria-label="Cerrar"><svg class="i"><use href="#i-x"/></svg></button></div>
+  <div class="dlg-body" style="grid-template-columns:1fr">
+    <p class="muted" id="roleText" style="margin:0"></p>
+    <div class="role-btns">
+      <button type="button" class="btn lg" id="roleVend"><svg class="i"><use href="#i-list"/></svg><span>Vendedor<small>Solo ver, con el PIN de vendedor</small></span></button>
+      <button type="button" class="btn ghost lg" id="roleAdmin"><svg class="i"><use href="#i-unlock"/></svg><span>Administrador<small>Ver y hacer cambios, con la contraseña</small></span></button>
+    </div>
+  </div>
 </dialog>
 
 <!-- Venta registrada -->

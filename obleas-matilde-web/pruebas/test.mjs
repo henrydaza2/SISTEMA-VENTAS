@@ -163,6 +163,55 @@ await t('cerrar caja (contó 49.000)', () => rpc('cerrar_caja', { p_pin: PIN, p_
 await t('admin_cajas', async () => { const c = await rpc('admin_cajas', { p_clave: CLAVE, p_dia: null }); return c.map(x => ({ base: x.base, efectivo: x.efectivo, contado: x.contado, abierta: x.abierta })); });
 await t('admin_ventas con costos y consumo', async () => { const v = await rpc('admin_ventas', { p_clave: CLAVE, p_dia: null }); return v.length; });
 
+// --- galletas automáticas, estimado y vista de vendedor (v4) ---
+await t('una oblea nueva creada desde la página recibe 2 galletas aunque no las ponga', async () => {
+  const id = await rpc('admin_guardar_producto', { p_clave: CLAVE, p_prod: { name: 'Oblea de prueba', type: 'venta', cat: 'Obleas', price: 3000, recipe: [{ id: 'ins-arequipe', qty: 20 }] } });
+  const r = (await db.query(`select insumo_id, cantidad::int c from recetas where producto_id = $1 order by insumo_id`, [id])).rows;
+  eq(r, [{ insumo_id: 'ins-arequipe', c: 20 }, { insumo_id: 'ins-obleas', c: 2 }]); return r;
+});
+await t('si se escribe otro número de galletas en una oblea, quedan 2', async () => {
+  await rpc('admin_guardar_producto', { p_clave: CLAVE, p_prod: { id: 'oblea-arequipe', name: 'Oblea solo arequipe', type: 'venta', cat: 'Obleas', price: 3500, recipe: [{ id: 'ins-obleas', qty: 3 }, { id: 'ins-arequipe', qty: 25 }] } });
+  return (await q1(`select cantidad::int c from recetas where producto_id = 'oblea-arequipe' and insumo_id = 'ins-obleas'`)).c === 2 ? 2 : (() => { throw new Error('no quedó en 2'); })();
+});
+await t('si se quita la receta de una oblea, las galletas vuelven solas', async () => {
+  await rpc('admin_guardar_producto', { p_clave: CLAVE, p_prod: { id: 'oblea-arequipe', name: 'Oblea solo arequipe', type: 'venta', cat: 'Obleas', price: 3500, recipe: [] } });
+  const c = (await q1(`select count(*)::int n from recetas where producto_id = 'oblea-arequipe' and insumo_id = 'ins-obleas'`)).n;
+  await rpc('admin_guardar_producto', { p_clave: CLAVE, p_prod: { id: 'oblea-arequipe', name: 'Oblea solo arequipe', type: 'venta', cat: 'Obleas', price: 3500, recipe: [{ id: 'ins-obleas', qty: 2 }, { id: 'ins-arequipe', qty: 25 }] } });
+  eq(c, 1); return 'repuestas';
+});
+await t('un boli no recibe galletas', async () => (await q1(`select count(*)::int n from recetas where producto_id = 'boli-coco'`)).n === 0 ? 'sin receta' : (() => { throw new Error('el boli tiene receta'); })());
+await t('estimado: con 100 galletas alcanzan 50 obleas solo arequipe (si hay arequipe)', async () => {
+  await db.exec(`update productos set existencia = 100 where id = 'ins-obleas'; update productos set existencia = 100000 where id = 'ins-arequipe'`);
+  const cat = await rpc('catalogo');
+  eq(cat.productos.find(p => p.id === 'oblea-arequipe').alcanza, 50, 'alcanza');
+  await db.exec(`update productos set existencia = 57.5 where id = 'ins-arequipe'`);    // 2 obleas: 25 g x 1,15 = 28,75 g c/u
+  eq((await rpc('catalogo')).productos.find(p => p.id === 'oblea-arequipe').alcanza, 2, 'manda el que se acaba primero');
+  await db.exec(`update productos set existencia = 100000 where id = 'ins-arequipe'`);
+  return 'ok';
+});
+await t('estimado: sin contar un insumo no se inventa un número', async () => {
+  await db.exec(`update productos set existencia = null where id = 'ins-queso'`);
+  const p = (await rpc('catalogo')).productos.find(x => x.id === 'oblea-arequipe-queso');
+  await db.exec(`update productos set existencia = 4000 where id = 'ins-queso'`);
+  eq(p.alcanza, null); return 'null';
+});
+await t('vendedor ve el inventario con su PIN, sin costos', async () => {
+  const inv = await rpc('vend_inventario', { p_pin: PIN });
+  const txt = JSON.stringify(inv);
+  if (/"cost"|"unit_cost"/.test(txt)) throw new Error('muestra costos');
+  if (inv.find(p => p.type === 'insumo').price != null) throw new Error('muestra precio de compra');
+  return { productos: inv.length, alcanza: inv.find(p => p.id === 'oblea-arequipe').alcanza };
+});
+await fails('vendedor con PIN malo no ve el inventario', () => rpc('vend_inventario', { p_pin: '000000' }), 'PIN_INCORRECTO');
+await t('vendedor ve la caja sin conteo ni costos', async () => {
+  const c = await rpc('vend_caja', { p_pin: PIN });
+  const txt = JSON.stringify(c);
+  if (/"cost"|"contado"|"esperado|"notas"/.test(txt)) throw new Error('muestra datos del cierre');
+  return { dia: c.dia, ventas: c.ventas.length, cajas: c.cajas.length, consumo: c.consumo.length };
+});
+await fails('el vendedor no puede usar funciones de administrador con su PIN', () => rpc('admin_productos', { p_clave: PIN }), 'CLAVE_INCORRECTA');
+await db.exec(`delete from intentos`);
+
 // --- bloqueo de intentos (al final: deja contadores) ---
 await db.exec(`delete from intentos`);
 await t('5 contraseñas malas bloquean ese dispositivo, aunque luego acierte', async () => {

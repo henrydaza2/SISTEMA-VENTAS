@@ -18,7 +18,7 @@ Este documento resume lo importante del código: cómo está armado, qué hace c
 | `obleas-matilde-web/supabase.sql` | Base de datos inicial: tablas, contraseña, PIN, ventas | Ejecutado |
 | `obleas-matilde-web/supabase-v2.sql` | Caja, adicionales, recetas, costos, editar ventas, meseros | Ejecutado |
 | `obleas-matilde-web/supabase-v3.sql` | Seguridad: bloqueo de intentos, ventas sin duplicar, día de la caja, respaldos revisados, descuento máximo; incluye el arreglo de insumos | **Pendiente de ejecutar** |
-| `obleas-matilde-web/supabase-v4.sql` | Galletas exactas: todas las obleas usan 2 del paquete x 100; los insumos por unidades van sin merma | **Pendiente de ejecutar** (después de v3) |
+| `obleas-matilde-web/supabase-v4.sql` | Galletas automáticas (2 por oblea, también en obleas nuevas), estimado de cuánto alcanza, y vista de solo lectura para vendedores | **Pendiente de ejecutar** (después de v3) |
 | `obleas-matilde-web/supabase-fix-insumos.sql` | Devuelve 3 insumos a su tipo correcto | Reemplazado por v3 (no hace falta) |
 | `obleas-matilde-web/pruebas/` | Pruebas de la base de datos y servidor local de prueba | Herramienta |
 | `obleas-matilde-web/INSTRUCCIONES.md` | Guía de instalación (Supabase + Netlify) | Guía |
@@ -66,6 +66,7 @@ Supabase (PostgreSQL)
 | `registrar_venta` | Registra la venta (en el día de la caja abierta), descuenta stock e insumos y asigna el número de orden. Con `p_ref` no se repite si llega dos veces | PIN, y código de meseros si hay descuento |
 | `verificar_mesero` | Comprueba el código de meseros | Bloqueo de intentos |
 | `crear_clave` | Crea la contraseña de administrador **solo si no existe** (mínimo 8) | — |
+| `vend_inventario` / `vend_caja` | El vendedor VE el inventario y la caja del día, sin costos, sin conteo ni resultado del cierre y sin poder cambiar nada (v4) | PIN |
 
 ### Funciones de administrador (piden contraseña)
 `admin_entrar`, `admin_fijar_descuento_max`, `admin_productos`, `admin_guardar_producto`, `admin_eliminar_producto`, `admin_ajustar_stock`, `admin_insumo_compra`, `admin_insumo_contar`, `admin_ventas`, `admin_cajas`, `admin_editar_venta`, `admin_anular`, `admin_fijar_pin`, `admin_fijar_codigo_mesero`, `admin_cambiar_clave`, `admin_respaldo`, `admin_restaurar`.
@@ -139,7 +140,7 @@ node test.mjs ..
 node server.mjs ..
 ```
 
-- `test.mjs` (o `npm test`) corre **63 pruebas** de la base de datos (v1 a v4) en un Postgres local (PGlite). Todas pasan. Termina con error si alguna falla.
+- `test.mjs` (o `npm test`) corre **73 pruebas** de la base de datos (v1 a v4) en un Postgres local (PGlite). Todas pasan. Termina con error si alguna falla.
 - `server.mjs` levanta http://localhost:8787 (solo para este computador) con la página real, las reglas de `_headers` y una base de datos de prueba. Claves de prueba: PIN `654321`, código de meseros `777777`, contraseña `admin123`.
 - Nada de esto toca la página ni la base de datos reales.
 

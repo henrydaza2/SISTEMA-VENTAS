@@ -2,7 +2,7 @@
 //  Estado
 // =====================================================================
 const S = { menu:[], adds:[], loaded:false, tieneClave:false, pidePin:false, pideMesero:false, descMax:100, caja:{abierta:false} };
-const A = { key:null, products:[], sales:[], cajas:[] };     // sesión de administrador (solo en memoria)
+const A = { key:null, role:null, pin:null, products:[], sales:[], cajas:[], consumo:[] };     // sesión de administrador (solo en memoria)
 let sb = null;
 const SHOP = 'OBLEAS MATILDE';
 const ADMIN_TABS = { inventario:'Para entrar al inventario.', cierre:'Para ver el cierre del día.', ajustes:'Para entrar a los ajustes.' };
@@ -78,7 +78,7 @@ async function run(fn, okMsg, quiet){
   try{ const r=await fn(); if(okMsg) toast(okMsg); return r===undefined?true:r; }
   catch(e){
     const m=String(e&&e.message);
-    if(m.includes('CLAVE_INCORRECTA')||m.includes('BLOQUEADO')) lockAdmin(true);
+    if(m.includes('CLAVE_INCORRECTA')||m.includes('BLOQUEADO')||(A.role==='vend'&&m.includes('PIN_INCORRECTO'))) lockAdmin(true);
     if(!(quiet && isNetErr(m))) toast(errText(e));
     return false;
   }
@@ -170,14 +170,47 @@ async function ensureAdmin(text){
     ? await askSecret({title:'Contraseña de administrador', text, check:tryRpc('admin_entrar', v=>({p_clave:v}))})
     : await askSecret({title:'Crea la contraseña de administrador', text:'Protege el inventario, el cierre y los ajustes en todos los dispositivos. Guárdala bien.', label:'Nueva contraseña (mínimo 8 caracteres)', twice:true, min:8, check:tryRpc('crear_clave', v=>({p_clave:v}))});
   if(!pass) return false;
-  A.key=pass; S.tieneClave=true;
+  A.key=pass; A.role='admin'; A.pin=null; S.tieneClave=true; setRole();
   return true;
 }
+// Inventario y Cierre: el administrador entra con su contraseña; un vendedor puede entrar
+// solo a mirar con su PIN (sin cambiar nada y sin ver costos ni el resultado de la caja)
+async function ensureView(text){
+  if(A.key || A.role==='vend') return true;
+  if(!S.loaded){ toast('Sin conexión con la base de datos.'); return false; }
+  const who = await askRole(text);
+  if(who==='admin') return ensureAdmin(text);
+  if(who!=='vend') return false;
+  try{
+    const r = await withPin(async pin=>({pin, data:await rpc('vend_inventario',{p_pin:pin})}));
+    if(!r) return false;
+    A.role='vend'; A.pin=r.pin; A.products=r.data||[]; setRole();
+    return true;
+  }catch(e){ toast(errText(e)); return false; }
+}
+function askRole(text){
+  return new Promise(res=>{
+    const d=$('roleDialog'); $('roleText').textContent=text||'';
+    let done=false; const fin=v=>{ if(done) return; done=true; d.close(); res(v); };
+    $('roleAdmin').onclick=()=>fin('admin'); $('roleVend').onclick=()=>fin('vend');
+    $('roleClose').onclick=()=>fin(null); d.oncancel=e=>{e.preventDefault();fin(null);};
+    d.showModal(); $('roleVend').focus();
+  });
+}
+// Modo solo lectura para vendedores
+function setRole(){
+  const ro = A.role==='vend';
+  document.body.classList.toggle('ro', ro);
+  document.querySelectorAll('.adminbar .msg').forEach(m=>m.innerHTML = ro
+    ? icon('lock')+'Modo vendedor: solo puedes ver'
+    : icon('unlock')+'Sesión de administrador abierta');
+  $('closeDate').disabled = ro;
+}
 function lockAdmin(silent){
-  A.key=null; A.products=[]; A.sales=[]; A.cajas=[];
+  A.key=null; A.role=null; A.pin=null; A.products=[]; A.sales=[]; A.cajas=[]; A.consumo=[]; setRole();
   ['prodDialog','receiptDialog'].forEach(id=>{ if($(id).open) $(id).close(); });
   if(!$('page-vender').classList.contains('active')) show('vender');
-  if(!silent) toast('Sesión de administrador cerrada');
+  if(!silent) toast('Sesión cerrada');
 }
 document.querySelectorAll('[data-lock]').forEach(b=>b.onclick=()=>lockAdmin());
 
@@ -191,14 +224,15 @@ function show(tab){
 }
 async function go(tab){
   if(ADMIN_TABS[tab]){
-    if(!await ensureAdmin(ADMIN_TABS[tab])) return;
+    // Ajustes es solo del administrador; Inventario y Cierre también los puede ver un vendedor
+    if(!(tab==='ajustes' ? await ensureAdmin(ADMIN_TABS[tab]) : await ensureView(ADMIN_TABS[tab]))) return;
     show(tab);
     if(tab==='inventario') await loadAdminProducts();
     // con la caja abierta desde ayer (pasada la medianoche), el cierre muestra el día de la caja
     if(tab==='cierre'){ $('closeDate').value = S.caja.abierta && S.caja.dia ? S.caja.dia : bogotaDay(); await loadSales(); }
     if(tab==='ajustes') renderSettings();
   } else {
-    A.key=null; A.products=[]; A.sales=[]; A.cajas=[];     // al volver a Vender se cierra la sesión de administrador
+    A.key=null; A.role=null; A.pin=null; A.products=[]; A.sales=[]; A.cajas=[]; A.consumo=[]; setRole();     // al volver a Vender se cierra la sesión
     show(tab); loadMenu();
   }
 }
@@ -314,7 +348,8 @@ function renderProducts(){
       <span class="prod-cat">${esc(p.cat||'')}</span>
       <span class="prod-name">${esc(p.name)}</span>
       ${p.adds_ok&&S.adds.length?`<span class="prod-extra">${p.incl?`Elige ${plS(p.incl)} · + adicionales`:'+ salsas y adicionales'}</span>`:''}
-      ${tracked(p)?`<span class="prod-stock ${low||out?'low':''}">${out?'Agotado':esc(left)+' disponibles'}</span>`:''}
+      ${tracked(p)?`<span class="prod-stock ${low||out?'low':''}">${out?'Agotado':esc(left)+' disponibles'}</span>`
+        :p.alcanza!=null?`<span class="prod-stock ${p.alcanza<=p.min?'low':''}">Alcanza para ≈ ${esc(p.alcanza)}</span>`:''}
       <span class="prod-foot"><span class="prod-price">${fmt(p.price)}</span>${inCart?`<span class="prod-qty">${inCart}</span>`:`<span class="prod-add">${icon('plus')}</span>`}</span>
     </button>`;
   }).join('') : `<div class="empty" style="grid-column:1/-1">${S.menu.length?'No hay productos que coincidan.':'Aún no hay productos a la venta.'}</div>`;
@@ -546,8 +581,16 @@ let invFilter='venta';
 const findA = id => A.products.find(x=>x.id===id);
 const insumos = () => A.products.filter(p=>p.type==='insumo');
 const unitCostIns = i => (+i.content>0) ? (+i.price)/(+i.content) : 0;
+function alcanzaIns(i){
+  if(i.qty==null) return null;
+  const usan = A.products.filter(p=>p.type==='venta' && (p.recipe||[]).some(r=>r.id===i.id));
+  if(!usan.length) return null;
+  const gasto = usan.map(p=>+(p.recipe.find(r=>r.id===i.id).qty) * (i.unit==='u' ? 1 : 1+(+p.merma||0)/100));
+  if(new Set(gasto.map(x=>x.toFixed(4))).size!==1 || !(gasto[0]>0)) return null;
+  return { n: Math.max(0, Math.floor(+i.qty/gasto[0])), que: usan.every(p=>/oblea/i.test(p.name+' '+(p.cat||''))) ? 'obleas' : 'productos' };
+}
 async function loadAdminProducts(){
-  const r = await run(()=>rpc('admin_productos',{p_clave:A.key}));
+  const r = await run(()=> A.role==='vend' ? rpc('vend_inventario',{p_pin:A.pin}) : rpc('admin_productos',{p_clave:A.key}));
   if(r!==false){ A.products=r||[]; }
   renderInventory();
 }
@@ -555,6 +598,7 @@ $('invSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{invFilter=b.dat
 $('invSearch').oninput=()=>renderInventory();
 // Aviso: insumos que no se descuentan al vender porque nunca se contaron (o les falta el precio)
 function renderInvAlert(){
+  if(A.role==='vend'){ $('invAlert').hidden=true; return; }
   const ins = insumos();
   const usado = id => A.products.some(p=>(p.recipe||[]).some(r=>r.id===id));
   const sinContar = ins.filter(p=>p.qty==null && usado(p.id));
@@ -579,39 +623,47 @@ function renderInventory(){
   $('invSub').textContent=`${n('venta')} productos · ${n('adicional')} adicionales · ${n('insumo')} insumos`;
   const q=$('invSearch').value.toLowerCase();
   const list=A.products.filter(p=>p.type===invFilter && (p.name+' '+(p.cat||'')).toLowerCase().includes(q))
-    .sort((a,b)=>(a.cat||'').localeCompare(b.cat||'')||a.name.localeCompare(b.name));
-  const actions = p => `<div class="actions">
+    .sort((a,b)=>(/oblea/i.test(b.cat||'')-/oblea/i.test(a.cat||''))||(a.cat||'').localeCompare(b.cat||'')||a.name.localeCompare(b.name));   // obleas primero
+  const ro = A.role==='vend';
+  const actions = p => ro ? '' : `<div class="actions">
       ${p.type==='insumo'?`<button class="btn ghost sm" data-buy="${esc(p.id)}">${icon('plus')}Compra</button><button class="btn ghost sm" data-count="${esc(p.id)}">Contar</button>`:''}
       ${p.type==='venta'&&tracked(p)?`<button class="btn ghost sm" data-adj="${esc(p.id)}">± Stock</button>`:''}
       <button class="icon-btn" data-edit="${esc(p.id)}" aria-label="Editar ${esc(p.name)}" title="Editar">${icon('edit')}</button>
       <button class="icon-btn del" data-del="${esc(p.id)}" aria-label="Eliminar ${esc(p.name)}" title="Eliminar">${icon('trash')}</button></div>`;
+  const actTh = ro ? '' : '<th class="num"><span class="sr">Acciones</span></th>';
+  const actTd = p => ro ? '' : `<td class="num">${actions(p)}</td>`;
+  const alc = p => p.alcanza!=null ? `<span class="${p.alcanza<=p.min?'badge low':''}">≈ ${esc(p.alcanza)}</span>`
+                 : (p.recipe||[]).length ? '<span class="badge mute">insumos sin contar</span>' : '—';
   if(invFilter==='insumo'){
-    $('invHint').textContent='Cuando compres, presiona Compra: suma al inventario y actualiza el precio. Contar sirve para corregir lo que hay.';
-    $('invHead').innerHTML='<tr><th>Insumo</th><th class="num">Paquete</th><th class="num">Costo por unidad</th><th class="num">Queda</th><th class="num"><span class="sr">Acciones</span></th></tr>';
+    $('invHint').textContent = ro ? 'Lo que queda de cada insumo y para cuántos productos alcanza.' : 'Cuando compres, presiona Compra: suma al inventario y actualiza el precio. Contar sirve para corregir lo que hay.';
+    $('invHead').innerHTML=`<tr><th>Insumo</th><th class="num">Paquete</th>${ro?'':'<th class="num">Costo por unidad</th>'}<th class="num">Queda</th>${actTh}</tr>`;
     $('invBody').innerHTML = list.length ? list.map(p=>{
       const has=p.qty!=null, low=has && +p.qty<=+p.min;
-      const paq = has && +p.content>0 ? ` · ${num(p.qty/p.content,1)} paq.` : '';
+      const paq = has && +p.content>0 ? `${num(p.qty/p.content,1)} paq.` : '';
+      const est = alcanzaIns(p);
       return `<tr>
-        <td><div class="pname">${esc(p.name)}</div>${!(+p.price)?'<div class="pcat"><span class="badge warn">Falta el precio</span></div>':''}</td>
-        <td class="num">${p.content?qtyU(p.content,p.unit):'—'}<div class="pcat">${fmt(p.price)}</div></td>
-        <td class="num">${p.content?'$'+num(unitCostIns(p),2)+' / '+(p.unit||'u'):'—'}</td>
-        <td class="num">${has?`<span class="${low?'badge low':''}">${qtyU(p.qty,p.unit)}</span><div class="pcat">${paq.slice(3)}</div>`:'<span class="badge mute">Sin registrar</span>'}</td>
-        <td class="num">${actions(p)}</td></tr>`;
+        <td><div class="pname">${esc(p.name)}</div>${!ro&&!(+p.price)?'<div class="pcat"><span class="badge warn">Falta el precio</span></div>':''}</td>
+        <td class="num">${p.content?qtyU(p.content,p.unit):'—'}${ro?'':`<div class="pcat">${fmt(p.price)}</div>`}</td>
+        ${ro?'':`<td class="num">${p.content?'$'+num(unitCostIns(p),2)+' / '+unitOf(p.unit):'—'}</td>`}
+        <td class="num">${has?`<span class="${low?'badge low':''}">${qtyU(p.qty,p.unit)}</span><div class="pcat">${[paq, est?`alcanza para ≈ ${esc(est.n)} ${est.que}`:''].filter(Boolean).join(' · ')}</div>`:'<span class="badge mute">Sin registrar</span>'}</td>
+        ${actTd(p)}</tr>`;
     }).join('') : '<tr><td colspan="5" class="empty">Sin insumos</td></tr>';
   } else {
-    $('invHint').textContent = invFilter==='adicional' ? 'Los adicionales se ofrecen al vender productos que los aceptan (las obleas).' : 'El costo sale de la receta (insumos + merma) o del costo escrito a mano.';
-    $('invHead').innerHTML=`<tr><th>${invFilter==='adicional'?'Adicional':'Producto'}</th><th class="num">Precio</th><th class="num">Costo</th><th class="num">Ganancia</th><th class="num">Margen</th>${invFilter==='venta'?'<th class="num">Stock</th>':''}<th class="num"><span class="sr">Acciones</span></th></tr>`;
+    $('invHint').textContent = invFilter==='adicional' ? 'Los adicionales se ofrecen al vender productos que los aceptan (las obleas).'
+      : ro ? '"Alcanza para" es cuántos se pueden preparar con los insumos que quedan.' : 'El costo sale de la receta (insumos + merma) o del costo escrito a mano. "Alcanza para" es cuántos se pueden preparar con los insumos que quedan.';
+    const venta = invFilter==='venta';
+    $('invHead').innerHTML=`<tr><th>${venta?'Producto':'Adicional'}</th><th class="num">Precio</th>${ro?'':'<th class="num">Costo</th><th class="num">Ganancia</th><th class="num">Margen</th>'}${venta?'<th class="num">Stock</th><th class="num">Alcanza para</th>':''}${actTh}</tr>`;
     $('invBody').innerHTML = list.length ? list.map(p=>{
       const c=+p.unit_cost||0, g=p.price-c;
       return `<tr>
-        <td><div class="pname">${esc(p.name)}</div><div class="pcat">${p.type==='venta'?`<i class="dot" style="background:${catColor(p.cat,A.products.filter(x=>x.type==='venta'))}"></i> ${esc(p.cat||'Sin categoría')}`:''}${p.recipe.length?` · receta${+p.merma?` + ${num(p.merma)} % merma`:''}`:''}${p.incl?` · incluye ${plS(p.incl)}`:''}${p.adds_ok?' · acepta adicionales':''}${p.salsa?' · salsa':''}</div></td>
+        <td><div class="pname">${esc(p.name)}</div><div class="pcat">${p.type==='venta'?`<i class="dot" style="background:${catColor(p.cat,A.products.filter(x=>x.type==='venta'))}"></i> ${esc(p.cat||'Sin categoría')}`:''}${(p.recipe||[]).length?` · receta${+p.merma?` + ${num(p.merma)} % merma`:''}`:''}${p.incl?` · incluye ${plS(p.incl)}`:''}${p.adds_ok?' · acepta adicionales':''}${p.salsa?' · salsa':''}</div></td>
         <td class="num">${fmt(p.price)}</td>
-        <td class="num">${c?fmt(c):'<span class="badge warn">Sin costo</span>'}</td>
+        ${ro?'':`<td class="num">${c?fmt(c):'<span class="badge warn">Sin costo</span>'}</td>
         <td class="num ${g>=0?'pos-v':'neg-v'}">${fmt(g)}</td>
-        <td class="num">${pct(g,p.price)}</td>
-        ${invFilter==='venta'?`<td class="num">${tracked(p)?(p.stock<=p.min?`<span class="badge low">${esc(p.stock)} · bajo</span>`:esc(p.stock)):'<span class="badge mute">sin control</span>'}</td>`:''}
-        <td class="num">${actions(p)}</td></tr>`;
-    }).join('') : `<tr><td colspan="7" class="empty">Nada por aquí</td></tr>`;
+        <td class="num">${pct(g,p.price)}</td>`}
+        ${venta?`<td class="num">${tracked(p)?(p.stock<=p.min?`<span class="badge low">${esc(p.stock)} · bajo</span>`:esc(p.stock)):'<span class="badge mute">sin control</span>'}</td><td class="num">${alc(p)}</td>`:''}
+        ${actTd(p)}</tr>`;
+    }).join('') : `<tr><td colspan="8" class="empty">Nada por aquí</td></tr>`;
   }
   $('invBody').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editProduct(b.dataset.edit));
   $('invBody').querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
@@ -744,6 +796,15 @@ $('closeDate').value = bogotaDay();
 $('closeDate').onchange = loadSales;
 $('refreshBtn').onclick = async()=>{ await loadSales(); toast('Cierre actualizado'); };
 async function loadSales(quiet){
+  if(A.role==='vend'){
+    const [r,p] = await Promise.all([
+      run(()=>rpc('vend_caja',{p_pin:A.pin}),null,quiet===true),
+      run(()=>rpc('vend_inventario',{p_pin:A.pin}),null,quiet===true)]);
+    if(r!==false && r){ A.sales=r.ventas||[]; A.cajas=r.cajas||[]; A.consumo=r.consumo||[]; $('closeDate').value=r.dia; }
+    if(p!==false) A.products=p||[];
+    if(A.role==='vend') renderClose();
+    return;
+  }
   if(!A.key) return;
   const dia=$('closeDate').value||null;
   const [v,c,p] = await Promise.all([
@@ -769,12 +830,18 @@ function renderClose(){
   $('sTransfer').textContent=fmt(tr); $('sTransferN').textContent=plural(f('transferencia').length);
   $('sProfit').textContent=fmt(gan); $('sProfitN').textContent=`Costo ${fmt(cost)}${desc?` · Descuentos ${fmt(desc)}`:''} · Margen ${pct(gan,tot)}`;
 
-  // Caja
-  $('cajasBody').innerHTML = A.cajas.length ? A.cajas.map(c=>{
+  // Caja (el vendedor no ve "debería haber", lo contado ni el resultado)
+  const ro = A.role==='vend';
+  $('cajasHead').innerHTML = ro
+    ? '<tr><th>Abierta</th><th>Cerrada</th><th class="num">Base</th><th class="num">Ventas efectivo</th><th class="num">Transferencias</th><th>Estado</th></tr>'
+    : '<tr><th>Abierta</th><th>Cerrada</th><th class="num">Base</th><th class="num">Ventas efectivo</th><th class="num">Debería haber</th><th class="num">Contado</th><th>Resultado</th></tr>';
+  $('cajasBody').innerHTML = !A.cajas.length ? '<tr><td colspan="7" class="empty">No se abrió caja este día</td></tr>'
+    : ro ? A.cajas.map(c=>`<tr><td>${fTime(c.desde)}</td><td>${c.hasta?fTime(c.hasta):'—'}</td><td class="num">${fmt(c.base)}</td><td class="num">${fmt(c.efectivo)}</td><td class="num">${fmt(c.transferencia)}</td><td>${c.abierta?'<span class="badge warn">Abierta</span>':'<span class="badge mute">Cerrada</span>'}</td></tr>`).join('')
+    : A.cajas.map(c=>{
     const esperado=+c.base + +c.efectivo, diff=c.abierta?null:(+c.contado - esperado);
     const res = c.abierta ? '<span class="badge warn">Abierta</span>' : diff===0 ? '<span class="badge ok">Cuadra</span>' : diff<0 ? `<span class="badge low">Falta ${fmt(-diff)}</span>` : `<span class="badge transfer">Sobra ${fmt(diff)}</span>`;
     return `<tr><td>${fTime(c.desde)}</td><td>${c.hasta?fTime(c.hasta):'—'}</td><td class="num">${fmt(c.base)}</td><td class="num">${fmt(c.efectivo)}</td><td class="num"><b>${fmt(esperado)}</b></td><td class="num">${c.abierta?'—':fmt(c.contado)}</td><td>${res}${c.notas?`<div class="pcat">${esc(c.notas)}</div>`:''}</td></tr>`;
-  }).join('') : '<tr><td colspan="7" class="empty">No se abrió caja este día</td></tr>';
+  }).join('');
 
   // Unidades vendidas
   const groups={}; let addsN=0;
@@ -825,10 +892,11 @@ function renderClose(){
 
   // Insumos usados
   const used={};
-  ok.forEach(s=>(s.consumo||[]).forEach(x=>{ used[x.id]=used[x.id]||{name:x.name,unit:x.unit,q:0,c:0}; used[x.id].q+=+x.qty; used[x.id].c+=+x.cost||0; }));
+  $('usedHead').innerHTML = `<tr><th>Insumo</th><th class="num">Cantidad usada</th>${ro?'':'<th class="num">Costo</th>'}<th class="num">Queda</th></tr>`;
+  (ro ? (A.consumo||[]) : ok.flatMap(s=>s.consumo||[])).forEach(x=>{ used[x.id]=used[x.id]||{name:x.name,unit:x.unit,q:0,c:0}; used[x.id].q+=+x.qty; used[x.id].c+=+x.cost||0; });
   const urows=Object.entries(used).sort((a,b)=>b[1].c-a[1].c);
   $('usedBody').innerHTML = urows.length ? urows.map(([id,x])=>{ const p=findA(id); const left=p&&p.qty!=null?`<span class="${+p.qty<=+p.min?'badge low':''}">${qtyU(p.qty,p.unit)}</span>`:'<span class="badge mute">Sin registrar</span>';
-    return `<tr><td>${esc(x.name)}</td><td class="num">${qtyU(x.q,x.unit)}</td><td class="num">${fmt(x.c)}</td><td class="num">${left}</td></tr>`; }).join('')
+    return `<tr><td>${esc(x.name)}</td><td class="num">${qtyU(x.q,x.unit)}</td>${ro?'':`<td class="num">${fmt(x.c)}</td>`}<td class="num">${left}</td></tr>`; }).join('')
     : '<tr><td colspan="4" class="empty">No se usaron insumos</td></tr>';
 }
 function download(content,name,type){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([content],{type})); a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
@@ -837,7 +905,7 @@ $('csvBtn').onclick=()=>{
   A.sales.forEach(s=>rows.push([pad3(s.order),s.day,fTime(s.date),s.items.map(i=>i.qty+'x '+i.name+(addsTxt(i)?' (+ '+addsTxt(i)+')':'')).join(' | '),s.pay,s.subtotal??s.total,s.discount||0,s.total,Math.round(saleCost(s)),Math.round(s.total-saleCost(s)),s.void?'Anulada':'OK']));
   download('﻿'+rows.map(r=>r.map(c=>{ let v=String(c??''); if(typeof c==='string' && /^[=+\-@\t\r]/.test(v)) v="'"+v; return `"${v.replace(/"/g,'""')}"`; }).join(';')).join('\n'),`cierre_${$('closeDate').value}.csv`,'text/csv');
 };
-setInterval(()=>{ if(A.key && !document.hidden && $('page-cierre').classList.contains('active') && !document.querySelector('dialog[open]')) loadSales(true); },30000);
+setInterval(()=>{ if((A.key||A.role==='vend') && !document.hidden && $('page-cierre').classList.contains('active') && !document.querySelector('dialog[open]')) loadSales(true); },30000);
 
 // =====================================================================
 //  Ajustes (administrador)
