@@ -4,12 +4,17 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node test.mjs ..",
-    "server": "node server.mjs .."
+    "test": "node test.mjs .. && node pagina.mjs ..",
+    "server": "node server.mjs ..",
+    "test:pagina": "node pagina.mjs ..",
+    "test:base": "node test.mjs .."
   },
   "keywords": [],
   "type": "module",
   "dependencies": {
     "@electric-sql/pglite": "^0.3.16"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.49.1"
   }
 }

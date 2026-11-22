@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const dir = process.argv[2] || '..';       // carpeta obleas-matilde-web
-const PORT = 8787;
+const PORT = +process.env.OM_PORT || 8787;     // las pruebas de la página usan otro puerto
 const RED = process.argv.includes('--red');
 const ORIGIN = `http://localhost:${PORT}`;
 // dirección con la que entró el navegador (en la red Wi-Fi es la IP de este computador)
@@ -21,11 +21,11 @@ await db.exec(`create role anon; create role authenticated; create schema extens
 for (const f of ['supabase.sql', 'supabase-v2.sql', 'supabase-v3.sql', 'supabase-v4.sql', 'supabase-v5.sql']) {
   if (fs.existsSync(path.join(dir, f))) await db.exec(fs.readFileSync(path.join(dir, f), 'utf8'));
 }
-// datos de prueba: contraseña admin123, PIN 654321, código de meseros 777777, insumos contados
+// datos de prueba: contraseña admin123, vendedor "Vendedor de prueba" con contraseña 654321, código de meseros 777777, insumos contados
 await db.exec(`update ajustes set clave_admin = extensions.crypt('admin123', extensions.gen_salt('bf')),
-                                  pin_vendedor = extensions.crypt('654321', extensions.gen_salt('bf')),
                                   codigo_mesero = extensions.crypt('777777', extensions.gen_salt('bf'));
-               update productos set existencia = contenido where tipo = 'insumo';`);
+               update productos set existencia = contenido where tipo = 'insumo';
+               insert into vendedores (nombre, clave) values ('Vendedor de prueba', extensions.crypt('654321', extensions.gen_salt('bf')));`);
 
 // Encabezados de sitio/_headers (los mismos de Netlify); la base de datos apunta a este servidor
 const headers = {};

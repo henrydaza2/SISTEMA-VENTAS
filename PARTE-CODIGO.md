@@ -19,7 +19,7 @@ Este documento resume lo importante del código: cómo está armado, qué hace c
 | `obleas-matilde-web/supabase-v2.sql` | Caja, adicionales, recetas, costos, editar ventas, meseros | Ejecutado |
 | `obleas-matilde-web/supabase-v3.sql` | Seguridad: bloqueo de intentos, ventas sin duplicar, día de la caja, respaldos revisados, descuento máximo; incluye el arreglo de insumos | **Pendiente de ejecutar** |
 | `obleas-matilde-web/supabase-v4.sql` | Galletas automáticas (2 por oblea, también en obleas nuevas), estimado de cuánto alcanza, y vista de solo lectura para vendedores | **Pendiente de ejecutar** (después de v3) |
-| `obleas-matilde-web/supabase-v5.sql` | Descartes: sacar productos o insumos dañados y calcular la pérdida; el respaldo los incluye | **Pendiente de ejecutar** (después de v4) |
+| `obleas-matilde-web/supabase-v5.sql` | Descartes; vendedores con contraseña; bloqueo de 5 intentos por dispositivo; galletas solo en la categoría Obleas; llave en Ajustes; respaldo con descartes | **Pendiente de ejecutar** (después de v4) |
 | `obleas-matilde-web/supabase-fix-insumos.sql` | Devuelve 3 insumos a su tipo correcto | Reemplazado por v3 (no hace falta) |
 | `obleas-matilde-web/pruebas/` | Pruebas de la base de datos y servidor local de prueba | Herramienta |
 | `obleas-matilde-web/INSTRUCCIONES.md` | Guía de instalación (Supabase + Netlify) | Guía |
@@ -41,7 +41,7 @@ Supabase (PostgreSQL)
 
 - **Las tablas no se tocan desde el navegador.** Tienen RLS activo y todos los permisos revocados para el rol público. Todo pasa por funciones `security definer`.
 - **La seguridad se valida en el servidor.** La contraseña, el PIN y el código de meseros se comparan dentro de la base de datos y se guardan cifrados con `crypt()` (bcrypt).
-- **Intentos limitados (v3).** 5 fallos desde un mismo dispositivo lo bloquean 15 minutos; además hay un tope general por hora (20 para la contraseña, 60 para PIN y código). Si la clave está mal, la función responde `{"error": "..."}` en vez de lanzar un error, para que el intento quede contado.
+- **Intentos limitados (v5).** 5 fallos seguidos de un mismo código desde un dispositivo lo bloquean 15 minutos para entrar con cualquier código. No hay tope general entre dispositivos (decisión del dueño). Si la clave está mal, la función responde `{"error": "..."}` en vez de lanzar un error, para que el intento quede contado.
 - **Los precios los calcula el servidor.** El navegador solo envía qué productos, cuántos y qué adicionales.
 
 ---
@@ -55,7 +55,9 @@ Supabase (PostgreSQL)
 | `recetas` | Cuánto de cada insumo usa una unidad de producto |
 | `ventas` | Cada venta: número de orden del día, productos, subtotal, descuento, total, costo, consumo de insumos, pago, caja |
 | `cajas` | Apertura y cierre de caja: base, efectivo contado, esperado y notas |
-| `ajustes` | Contraseña de administrador, PIN de vendedor y código de meseros (cifrados), descuento máximo (%) |
+| `ajustes` | Contraseña de administrador y código de meseros (cifrados), descuento máximo (%), llave de transferencia |
+| `vendedores` | Nombre, contraseña cifrada y si está activo; cada venta guarda quién la atendió (`ventas.vendedor`) (v5) |
+| `descartes` | Productos o insumos descartados, cantidad, motivo y pérdida (v5) |
 | `intentos` | Intentos fallidos por tipo y dispositivo, y bloqueos (v3) |
 
 ### Funciones públicas (cualquiera con el enlace)
@@ -114,9 +116,10 @@ Supabase (PostgreSQL)
 
 **Detalles técnicos:**
 - La sesión de administrador solo vive en memoria y se cierra al volver a Vender. Al editar una venta, la contraseña se pide de nuevo al guardar; no queda guardada en la pantalla de vender.
-- El PIN de vendedor se recuerda solo mientras la pestaña esté abierta (`sessionStorage`).
+- La contraseña de vendedor se recuerda solo mientras la pestaña esté abierta (`sessionStorage`).
 - Todo texto o número que se inserta en la página pasa por `esc()` o por funciones que solo devuelven números (`fmt`, `num`, `qtyU`, `pad3`).
-- Al elegir Transferencia se muestra la llave `@NEQUIZHA210` (constante `LLAVE_TRANSFERENCIA` al inicio de `app.js`).
+- Al elegir Transferencia se muestra la llave que está en Ajustes (por defecto `@NEQUIZHA210`).
+- Costos de una unidad y "alcanza para" los calcula la base (`base_cost`, `alcanza`, `alcanza_ins`); la página solo los muestra. La única cuenta en la página es la vista previa del formulario de producto, porque la receta aún no está guardada.
 - Caja pide código cada vez; si se cancela, la sesión que había sigue igual.
 - Cada cobro lleva un identificador (`crypto.randomUUID()`): si se corta la señal y se presiona Cobrar otra vez, la venta no se repite.
 - Script de Supabase con `integrity` (SRI) y política CSP en `_headers`. Si se cambia la versión de supabase-js, hay que recalcular el `integrity`.
@@ -143,8 +146,8 @@ node test.mjs ..
 node server.mjs ..
 ```
 
-- `test.mjs` (o `npm test`) corre **85 pruebas** de la base de datos (v1 a v5) en un Postgres local (PGlite). Todas pasan. Termina con error si alguna falla.
-- `server.mjs` levanta http://localhost:8787 (solo para este computador) con la página real, las reglas de `_headers` y una base de datos de prueba. Claves de prueba: PIN `654321`, código de meseros `777777`, contraseña `admin123`.
+- `test.mjs` (o `npm test`) corre **95 pruebas** de la base de datos (v1 a v5); `pagina.mjs` corre **13 pruebas de la página** en Edge sin ventana (vender, caja, inventario, descartes, vendedores, llave, bloqueo, XSS y que nada se salga en el celular). `npm test` corre las dos en un Postgres local (PGlite). Todas pasan. Termina con error si alguna falla.
+- `server.mjs` levanta http://localhost:8787 (solo para este computador) con la página real, las reglas de `_headers` y una base de datos de prueba. Claves de prueba: vendedor "Vendedor de prueba" con contraseña `654321`, código de meseros `777777`, contraseña `admin123`.
 - Nada de esto toca la página ni la base de datos reales.
 
 ---

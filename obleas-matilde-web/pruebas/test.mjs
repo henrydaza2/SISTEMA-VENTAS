@@ -29,7 +29,7 @@ const rpc = async (fn, args = {}) => {
   if (r && typeof r === 'object' && !Array.isArray(r) && typeof r.error === 'string') throw new Error(r.error);
   return r;
 };
-const PIN = '654321', MESERO = '777777', CLAVE = 'admin123';
+const PIN = 'ana2024x', MESERO = '777777', CLAVE = 'admin123';   // PIN = contraseña de la vendedora Ana
 
 await t('v1 se ejecuta', async () => { await db.exec(v1); });
 await t('venta v1 de prueba', async () => { await db.exec(`update ajustes set clave_admin = extensions.crypt('${CLAVE}', extensions.gen_salt('bf'))`); const r = (await db.query(`select public.registrar_venta(null, '[{"id":"oblea-3-salsas","qty":1}]'::jsonb, 'efectivo', 0) r`)).rows[0].r; return r.total; });
@@ -43,6 +43,8 @@ await t('v3 se ejecuta otra vez (idempotente)', async () => { await db.exec(v3);
 await db.exec(`insert into productos (id, nombre, categoria, tipo, precio) values ('meseros-oblea', 'Oblea solo Arequipe Meseros', 'Obleas', 'venta', 2000)`);
 await t('v4 se ejecuta', async () => { await db.exec(v4); });
 await t('v4 se ejecuta otra vez (idempotente)', async () => { await db.exec(v4); });
+// el PIN de vendedor que había antes de v5 debe quedar como el vendedor "Vendedor"
+await db.exec(`update ajustes set pin_vendedor = extensions.crypt('4321', extensions.gen_salt('bf'))`);
 await t('v5 se ejecuta', async () => { await db.exec(v5); });
 await t('v3 + v4 + v5 juntos se pueden volver a ejecutar', async () => { await db.exec(v3 + '\n' + v4 + '\n' + v5); });
 await t('después de repetir v3 + v4 + v5 las galletas siguen exactas', async () => (await q1(`select round(public._costo_unit('oblea-arequipe'),2) c`)).c);
@@ -50,6 +52,14 @@ await t('todas las obleas del menú usan 2 galletas', async () => {
   const r = (await db.query(`select p.id, r.cantidad::int c from productos p left join recetas r on r.producto_id = p.id and r.insumo_id = 'ins-obleas'
                              where p.tipo = 'venta' and p.nombre ilike '%oblea%' order by p.id`)).rows;
   if (r.length !== 5 || r.some(x => x.c !== 2)) throw new Error(JSON.stringify(r)); return r.map(x => x.id);
+});
+await t('un producto que se llama "oblea" pero no está en la categoría Obleas no recibe galletas', async () => {
+  const id = await rpc('admin_guardar_producto', { p_clave: CLAVE, p_prod: { name: 'Malteada de oblea', type: 'venta', cat: 'Malteadas', price: 7000, cost: 2500 } });
+  eq((await q1(`select count(*)::int n from recetas where producto_id = $1`, [id])).n, 0, 'recetas');
+  await db.exec(`insert into recetas (producto_id, insumo_id, cantidad) values ('${id}', 'ins-obleas', 3)`);
+  eq((await q1(`select cantidad::int c from recetas where producto_id = $1`, [id])).c, 3, 'su receta se respeta');
+  await db.exec(`delete from productos where id = '${id}'`);   // se borra para no cambiar los demás cálculos
+  return 'sin galletas automáticas';
 });
 await t('v3 devuelve Chispitas a insumo y repone su receta', async () => {
   const r = await q1(`select tipo, precio::int, contenido::int, (select count(*)::int from recetas where insumo_id = 'ins-chispitas') rec from productos where id = 'ins-chispitas'`);
@@ -70,15 +80,27 @@ await fails('anon no llama _armar', async () => { await db.exec('set role anon')
 await fails('anon no llama _acceso', async () => { await db.exec('set role anon'); try { await db.query(`select public._acceso('admin','x')`); } finally { await db.exec('reset role'); } }, 'permission denied');
 await fails('la función vieja menu() ya no existe', () => rpc('menu'), 'does not exist');
 
-await fails('vender con caja cerrada', () => rpc('registrar_venta', { p_pin: null, p_items: [{ id: 'oblea-arequipe', qty: 1 }], p_pago: 'efectivo' }), 'CAJA_CERRADA');
-await fails('PIN de 4 caracteres ya no se acepta', () => rpc('admin_fijar_pin', { p_clave: CLAVE, p_pin: '4321' }), 'PIN_CORTO');
+await fails('vender con caja cerrada', () => rpc('registrar_venta', { p_pin: '4321', p_items: [{ id: 'oblea-arequipe', qty: 1 }], p_pago: 'efectivo' }), 'CAJA_CERRADA');
+await t('el PIN que había quedó como el vendedor "Vendedor"', async () => {
+  const v = await rpc('admin_vendedores', { p_clave: CLAVE });
+  eq(v.map(x => x.name), ['Vendedor'], 'vendedores'); eq((await q1(`select pin_vendedor from ajustes`)).pin_vendedor, null, 'pin viejo borrado');
+  return v[0].active;
+});
+await fails('contraseña de vendedor de menos de 6 no se acepta', () => rpc('admin_guardar_vendedor', { p_clave: CLAVE, p_id: null, p_nombre: 'Ana', p_contra: 'ab1' }), 'PIN_CORTO');
 await fails('contraseña de menos de 8 ya no se acepta', () => rpc('admin_cambiar_clave', { p_clave: CLAVE, p_nueva: 'corta12' }), 'CLAVE_CORTA');
-await t('un PIN viejo de 4 caracteres sigue funcionando', async () => {
-  await db.exec(`update ajustes set pin_vendedor = extensions.crypt('4321', extensions.gen_salt('bf'))`);
+await t('el PIN viejo de 4 caracteres sigue funcionando', async () => {
   const c = await rpc('abrir_caja', { p_pin: '4321', p_base: 0 }); await rpc('cerrar_caja', { p_pin: '4321', p_contado: 0 });
   return c.abierta;
 });
-await t('fijar PIN de 6', () => rpc('admin_fijar_pin', { p_clave: CLAVE, p_pin: PIN }));
+await t('crear la vendedora Ana con contraseña de letras y números', () => rpc('admin_guardar_vendedor', { p_clave: CLAVE, p_id: null, p_nombre: 'Ana', p_contra: PIN }));
+await fails('no se repite el nombre de un vendedor', () => rpc('admin_guardar_vendedor', { p_clave: CLAVE, p_id: null, p_nombre: 'ana', p_contra: 'otra123' }), 'VENDEDOR_EXISTE');
+await fails('no se repite la contraseña de otro vendedor', () => rpc('admin_guardar_vendedor', { p_clave: CLAVE, p_id: null, p_nombre: 'Luis', p_contra: PIN }), 'CONTRA_REPETIDA');
+await fails('la función vieja admin_fijar_pin ya no existe', () => rpc('admin_fijar_pin', { p_clave: CLAVE, p_pin: '123456' }), 'does not exist');
+await t('llave de transferencia: viene por defecto y se cambia desde Ajustes', async () => {
+  eq((await rpc('estado')).llave, '@NEQUIZHA210', 'por defecto');
+  await rpc('admin_fijar_llave', { p_clave: CLAVE, p_llave: '  @OTRA123 ' }); eq((await rpc('estado')).llave, '@OTRA123', 'cambiada');
+  await rpc('admin_fijar_llave', { p_clave: CLAVE, p_llave: '@NEQUIZHA210' }); return 'ok';
+});
 await fails('abrir caja con PIN malo', () => rpc('abrir_caja', { p_pin: '000000', p_base: 50000 }), 'PIN_INCORRECTO');
 await fails('base negativa', () => rpc('abrir_caja', { p_pin: PIN, p_base: -1 }), 'VALOR_INVALIDO');
 await t('abrir caja', () => rpc('abrir_caja', { p_pin: PIN, p_base: 50000 }));
@@ -90,6 +112,7 @@ await t('insumos: compra arequipe (2 baldes) y contar obleas', async () => [
 await t('precio queso por compra (4 kg a $80.000)', () => rpc('admin_insumo_compra', { p_clave: CLAVE, p_id: 'ins-queso', p_paquetes: 1, p_precio: 80000 }));
 
 const s1 = await rpc('registrar_venta', { p_pin: PIN, p_items: [{ id: 'oblea-1-salsa', qty: 2, adds: ['add-salsa-mora', 'add-salsa-chocolate'] }, { id: 'boli-coco', qty: 1 }], p_pago: 'efectivo', p_recibido: 20000 });
+await t('la venta guarda quién la atendió', async () => { eq(s1.seller, 'Ana'); return s1.seller; });
 await t('venta: 1 salsa incluida + 1 extra, total 17.500, sin costos visibles', async () => { if (s1.total != 17500) throw new Error(s1.total); if (JSON.stringify(s1).includes('"cost"')) throw new Error('expone costos'); return { total: s1.total, adds: s1.items[0].adds }; });
 const s1b = await rpc('registrar_venta', { p_pin: PIN, p_items: [{ id: 'oblea-arequipe', qty: 1, adds: ['add-salsa-mora'] }, { id: 'oblea-3-salsas', qty: 1, adds: ['add-salsa-mora', 'add-salsa-durazno', 'add-salsa-maracuya'] }], p_pago: 'efectivo' });
 await t('solo arequipe + salsa = 4.500; 3 salsas = 6.500 → 11.000', async () => { eq(+s1b.total, 11000); return s1b.total; });
@@ -247,28 +270,58 @@ await t('lista de descartes del día con la pérdida', async () => {
   return { total: l.length, anulados: l.filter(d => d.void).length, perdida: l.filter(d => !d.void).reduce((a, d) => a + +d.cost, 0) };
 });
 await fails('un vendedor no puede descartar con su PIN', () => rpc('admin_descartar', { p_clave: PIN, p_id: 'ins-arequipe', p_cantidad: 1 }), 'CLAVE_INCORRECTA');
-await t('el respaldo incluye los descartes', async () => (await rpc('admin_respaldo', { p_clave: CLAVE })).descartes.length);
+await t('el respaldo incluye los descartes y al subirlo se restauran', async () => {
+  const b = await rpc('admin_respaldo', { p_clave: CLAVE });
+  const n = b.descartes.length; const uno = b.descartes[0].uid;
+  await db.exec(`delete from descartes where id = '${uno}'`);
+  const r = await rpc('admin_restaurar', { p_clave: CLAVE, p_datos: b });
+  eq(r.descartes, 1, 'restaurado'); eq((await q1(`select count(*)::int n from descartes`)).n, n, 'total'); return r;
+});
+await t('el servidor da el costo de una unidad y para cuántas obleas alcanzan las galletas', async () => {
+  const p = await rpc('admin_productos', { p_clave: CLAVE });
+  const g = p.find(x => x.id === 'ins-obleas'), o = p.find(x => x.id === 'oblea-arequipe');
+  eq(g.alcanza_ins, { n: Math.floor(+g.qty / 2), que: 'obleas' }, 'galletas'); eq(+o.base_cost, 696.5, 'costo oblea');
+  return { galletas: g.alcanza_ins, base_cost: o.base_cost };
+});
+await t('vendedores: lista con ventas de hoy; desactivar quita el acceso', async () => {
+  const l = await rpc('admin_vendedores', { p_clave: CLAVE });
+  const ana = l.find(v => v.name === 'Ana'), viejo = l.find(v => v.name === 'Vendedor');
+  if (!(ana.sales_today > 0)) throw new Error('sin ventas de Ana');
+  await rpc('admin_vendedor_activo', { p_clave: CLAVE, p_id: viejo.id, p_activo: false });
+  try { await rpc('vend_inventario', { p_pin: '4321' }); throw new Error('entró inactivo'); } catch (e) { if (!e.message.includes('PIN_INCORRECTO')) throw e; }
+  await rpc('admin_eliminar_vendedor', { p_clave: CLAVE, p_id: viejo.id });
+  await db.exec(`delete from intentos`);
+  return { ana: ana.sales_today, quedan: (await rpc('admin_vendedores', { p_clave: CLAVE })).length };
+});
+await t('cambiar la contraseña de un vendedor', async () => {
+  const ana = (await rpc('admin_vendedores', { p_clave: CLAVE })).find(v => v.name === 'Ana');
+  await rpc('admin_guardar_vendedor', { p_clave: CLAVE, p_id: ana.id, p_nombre: 'Ana', p_contra: 'nueva99' });
+  await rpc('vend_inventario', { p_pin: 'nueva99' });
+  await rpc('admin_guardar_vendedor', { p_clave: CLAVE, p_id: ana.id, p_nombre: 'Ana', p_contra: PIN });
+  return 'ok';
+});
 await db.exec(`delete from intentos`);
 
 // --- bloqueo de intentos (al final: deja contadores) ---
 await db.exec(`delete from intentos`);
-await t('5 contraseñas malas bloquean ese dispositivo, aunque luego acierte', async () => {
+await t('5 contraseñas malas bloquean el dispositivo para CUALQUIER código, aunque luego acierte', async () => {
   await ip('1.1.1.1');
   for (let i = 0; i < 5; i++) { try { await rpc('admin_entrar', { p_clave: 'mala' + i }); } catch (e) { if (!e.message.includes('CLAVE_INCORRECTA')) throw e; } }
-  try { await rpc('admin_entrar', { p_clave: CLAVE }); throw new Error('no bloqueó'); } catch (e) { if (!e.message.startsWith('BLOQUEADO:')) throw e; return e.message; }
+  try { await rpc('admin_entrar', { p_clave: CLAVE }); throw new Error('no bloqueó'); } catch (e) { if (!e.message.startsWith('BLOQUEADO:')) throw e; }
+  try { await rpc('vend_inventario', { p_pin: PIN }); throw new Error('no bloqueó al vendedor'); } catch (e) { if (!e.message.startsWith('BLOQUEADO:')) throw e; return e.message; }
 });
 await t('otro dispositivo sí puede entrar', async () => { await ip('2.2.2.2'); return rpc('admin_entrar', { p_clave: CLAVE }); });
-await t('el bloqueo también frena el PIN y el código desde otro tipo', async () => {
+await t('acertar otro código no borra los fallos de la contraseña', async () => {
   await ip('3.3.3.3');
-  for (let i = 0; i < 5; i++) { try { await rpc('verificar_mesero', { p_codigo: 'x' + i }); } catch (e) { } }
-  try { await rpc('verificar_mesero', { p_codigo: MESERO }); throw new Error('no bloqueó'); } catch (e) { if (!e.message.startsWith('BLOQUEADO')) throw e; }
-  return rpc('abrir_caja', { p_pin: PIN, p_base: 0 }).then(c => c.abierta);   // el PIN es otro contador
+  for (let i = 0; i < 4; i++) { try { await rpc('admin_entrar', { p_clave: 'mala' + i }); } catch (e) { } }
+  await rpc('vend_inventario', { p_pin: PIN });           // la vendedora entra bien
+  try { await rpc('admin_entrar', { p_clave: 'mala5' }); } catch (e) { }
+  try { await rpc('admin_entrar', { p_clave: CLAVE }); throw new Error('no bloqueó'); } catch (e) { if (!e.message.startsWith('BLOQUEADO')) throw e; return e.message; }
 });
-await t('tope general: 20 contraseñas malas desde muchos dispositivos bloquean a todos', async () => {
+await t('ya no hay tope general: fallos sueltos de muchos dispositivos no bloquean a otro', async () => {
   await db.exec(`delete from intentos`);
   for (let i = 0; i < 20; i++) { await ip('9.9.9.' + i); try { await rpc('admin_entrar', { p_clave: 'mala' }); } catch (e) { } }
-  await ip('8.8.8.8');
-  try { await rpc('admin_entrar', { p_clave: CLAVE }); throw new Error('no bloqueó'); } catch (e) { if (!e.message.startsWith('BLOQUEADO')) throw e; return e.message; }
+  await ip('8.8.8.8'); return rpc('admin_entrar', { p_clave: CLAVE });
 });
 await ip(null); await db.exec(`delete from intentos`);
 await fails('admin sin clave correcta', () => rpc('admin_cajas', { p_clave: 'mala', p_dia: null }), 'CLAVE_INCORRECTA');

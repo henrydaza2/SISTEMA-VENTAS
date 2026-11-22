@@ -5,7 +5,6 @@ const S = { menu:[], adds:[], loaded:false, tieneClave:false, pidePin:false, pid
 const A = { key:null, role:null, pin:null, products:[], sales:[], cajas:[], consumo:[] };     // sesión de administrador (solo en memoria)
 let sb = null;
 const SHOP = 'OBLEAS MATILDE';
-const LLAVE_TRANSFERENCIA = '@NEQUIZHA210';     // la llave que se muestra al elegir Transferencia
 const ADMIN_TABS = { inventario:'Para entrar al inventario.', cierre:'Para entrar a la caja. Siempre se pide el código.', ajustes:'Para entrar a los ajustes.' };
 
 const $ = id => document.getElementById(id);
@@ -56,7 +55,8 @@ function errText(e){
   const m=String((e&&e.message)||e||'');
   if(m.includes('BLOQUEADO')){ const s=+(m.split('BLOQUEADO:')[1]||900); return `Demasiados intentos fallidos. Espera ${Math.max(1,Math.ceil(s/60))} min y vuelve a intentar.`; }
   const map = {
-    PIN_INCORRECTO:'PIN de vendedor incorrecto.', CLAVE_INCORRECTA:'Contraseña incorrecta.', SIN_CLAVE:'Aún no hay contraseña de administrador.',
+    PIN_INCORRECTO:'Contraseña de vendedor incorrecta.', VENDEDOR_EXISTE:'Ya hay un vendedor con ese nombre.',
+    CONTRA_REPETIDA:'Otro vendedor ya usa esa contraseña. Elige otra.', VENDEDOR_NO_EXISTE:'Ese vendedor ya no existe.', CLAVE_INCORRECTA:'Contraseña incorrecta.', SIN_CLAVE:'Aún no hay contraseña de administrador.',
     CAJA_CERRADA:'La caja está cerrada. Ábrela para vender.', CAJA_YA_ABIERTA:'La caja ya está abierta en otro dispositivo.', cajas_solo_una_abierta:'La caja ya está abierta en otro dispositivo.',
     SIN_CODIGO_MESERO:'El administrador aún no ha creado el código de meseros.', CODIGO_MESERO_INCORRECTO:'Código de mesero incorrecto.',
     DESCUENTO_MAYOR:'El descuento no puede ser mayor que el subtotal.', DESCUENTO_MAXIMO:'El descuento supera el máximo permitido.',
@@ -92,7 +92,7 @@ async function loadMenu(){
   try{
     const [st, cat] = await Promise.all([rpc('estado'), rpc('catalogo')]);
     if(seq!==menuSeq) return;
-    S.tieneClave=!!st.tiene_clave; S.pidePin=!!st.pide_pin; S.pideMesero=!!st.pide_mesero; S.descMax=+st.descuento_max||100; S.caja=st.caja||{abierta:false};
+    S.tieneClave=!!st.tiene_clave; S.pidePin=!!st.pide_pin; S.pideMesero=!!st.pide_mesero; S.descMax=+st.descuento_max||100; S.llave=st.llave||''; $('tkValue').textContent=S.llave; S.caja=st.caja||{abierta:false};
     S.menu=cat.productos||[]; S.adds=cat.adicionales||[]; S.loaded=true;
     banner(''); setSync(true,'En línea');
   }catch(e){
@@ -189,7 +189,7 @@ async function ensureView(text, force){
   if(who!=='vend') return false;
   // el vendedor escribe su PIN cada vez que entra
   let data=null;
-  const pin = !S.pidePin ? '' : await askSecret({title:'PIN de vendedor', text:(text||'')+' Solo podrás ver, sin hacer cambios.', label:'PIN',
+  const pin = !S.pidePin ? '' : await askSecret({title:'Contraseña de vendedor', text:(text||'')+' Solo podrás ver, sin hacer cambios.', label:'Contraseña',
     check: async v=>{ try{ data=await rpc('vend_inventario',{p_pin:v}); return ''; }catch(e){ return errText(e); } }});
   if(pin===null) return false;
   if(!data){ try{ data=await rpc('vend_inventario',{p_pin:pin}); }catch(e){ toast(errText(e)); return false; } }
@@ -248,7 +248,7 @@ document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>go(b.dataset.ta
 function catColor(c, list){ const all=[...new Set((list||S.menu).map(p=>p.cat||'Sin categoría'))].sort(); return `var(--c${(Math.max(0,all.indexOf(c||'Sin categoría'))%6)+1})`; }
 
 // =====================================================================
-//  PIN de vendedor (se recuerda en este dispositivo)
+//  Contraseña de vendedor (se recuerda mientras la pestaña esté abierta)
 // =====================================================================
 // el PIN se recuerda solo mientras la pestaña esté abierta (sessionStorage), no queda guardado en el aparato
 const pinStore = { get(){ try{ return sessionStorage.getItem('om_pin')||this._v||''; }catch(e){ return this._v||''; } }, set(v){ this._v=v; try{ v?sessionStorage.setItem('om_pin',v):sessionStorage.removeItem('om_pin'); localStorage.removeItem('om_pin'); }catch(e){} } };
@@ -256,7 +256,7 @@ try{ localStorage.removeItem('om_pin'); }catch(e){}     // borra el PIN que guar
 async function getPin(force){
   if(!S.pidePin) return '';
   if(!force && pinStore.get()) return pinStore.get();
-  const p = await askSecret({title:'PIN de vendedor', text:'Escribe el PIN para usar la caja en este dispositivo.', label:'PIN'});
+  const p = await askSecret({title:'Contraseña de vendedor', text:'Escribe tu contraseña de vendedor para usar la caja en este dispositivo.', label:'Contraseña'});
   if(p) pinStore.set(p);
   return p;
 }
@@ -266,7 +266,7 @@ async function withPin(fn){
   for(let i=0;i<3;i++){
     try{ return await fn(pin); }
     catch(e){
-      if(String(e.message).includes('PIN_INCORRECTO')){ pinStore.set(''); S.pidePin=true; toast('PIN de vendedor incorrecto.'); pin=await getPin(true); if(!pin) return null; }
+      if(String(e.message).includes('PIN_INCORRECTO')){ pinStore.set(''); S.pidePin=true; toast('Contraseña de vendedor incorrecta.'); pin=await getPin(true); if(!pin) return null; }
       else throw e;
     }
   }
@@ -282,9 +282,12 @@ function renderCaja(){
   $('cajaBar').innerHTML = !S.loaded ? '' : c.abierta
     ? `<span class="cajachip"><i class="dot cash"></i>Caja abierta · ${fTime(c.desde)}</span><button class="btn ghost sm" id="closeCajaBtn">${icon('lock')}Cerrar caja</button>`
     : `<span class="cajachip off"><i class="dot" style="background:var(--danger)"></i>Caja cerrada</span>${editing?`<button class="btn sm" data-open-caja>${icon('store')}Abrir caja</button>`:''}`;
+  // recibo de la última venta siempre a mano (en el celular, el de la hoja de venta queda escondido al cerrarla)
+  if(S.loaded && lastSale) $('cajaBar').insertAdjacentHTML('beforeend', `<button class="icon-btn" id="lastRcTop" aria-label="Recibo de la última venta" title="Recibo de la última venta">${icon('print')}</button>`);
   $('cajaClosed').hidden = !S.loaded || c.abierta || editing;
   document.querySelectorAll('[data-open-caja]').forEach(b=>b.onclick=abrirCaja);
   if($('closeCajaBtn')) $('closeCajaBtn').onclick=cerrarCaja;
+  if($('lastRcTop')) $('lastRcTop').onclick=()=>openReceipt(lastSale);
 }
 async function abrirCaja(){
   const v = await askForm({title:'Abrir caja', text:'Escribe con cuánto efectivo empiezas el día (la base para dar cambio).',
@@ -440,7 +443,7 @@ function renderCart(){
   $('cartTotal').textContent=fmt(t);
   document.querySelectorAll('.pay button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.pay===pay));
   $('cashBox').hidden = pay!=='efectivo';
-  $('transferBox').hidden = pay!=='transferencia';
+  $('transferBox').hidden = pay!=='transferencia' || !S.llave;
   const bills=[2000,5000,10000,20000,50000,100000].filter(b=>b>t).slice(0,4);
   $('quick').innerHTML = t ? [`<button data-v="${t}">Exacto</button>`,...bills.map(b=>`<button data-v="${b}">${fmt(b)}</button>`)].join('') : '';
   $('quick').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('received').value=b.dataset.v;renderCart();});
@@ -467,9 +470,8 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape' && $('cartPanel').
 $('cartBar').onclick=openSheet; $('closeSheet').onclick=closeSheet; $('backdrop').onclick=closeSheet;
 document.querySelectorAll('.pay button').forEach(b=>b.onclick=()=>{pay=b.dataset.pay;saleRef=null;renderCart();});
 $('received').oninput = renderCart;
-$('tkValue').textContent = LLAVE_TRANSFERENCIA;
 $('tkCopy').onclick = async()=>{
-  try{ await navigator.clipboard.writeText(LLAVE_TRANSFERENCIA); toast('Llave copiada'); }
+  try{ await navigator.clipboard.writeText(S.llave); toast('Llave copiada'); }
   catch(e){ const r=document.createRange(); r.selectNodeContents($('tkValue')); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r); toast('Selecciona y copia la llave'); }
 };
 $('search').oninput = renderProducts;
@@ -573,6 +575,7 @@ function receiptHtml(s){
   return `${s.void?'<div class="void">VENTA ANULADA</div>':''}
     <div class="c shop">${SHOP}</div>
     <div class="r tot"><span>Orden N.º ${pad3(s.order)}</span><span class="when">${fDateShort(s.date)} ${fTime(s.date)}</span></div>
+    ${s.seller?`<div class="in">Atendió: ${esc(s.seller)}</div>`:''}
     ${s.edited?`<div class="in">Modificada ${fTime(s.edited)}</div>`:''}
     <div class="hr"></div>
     ${s.items.map(i=>`<div class="item"><div class="r"><span>${esc(i.qty)} ${esc(i.name)}</span><span>${money(i.price*i.qty)}</span></div>${addsLine(i)?`<div class="in">+ ${addsLine(i)}</div>`:''}${int(i.qty)>1?`<div class="in">${money(i.price)} c/u</div>`:''}</div>`).join('')}
@@ -595,14 +598,6 @@ let invFilter='venta', invCat='Todas';
 const findA = id => A.products.find(x=>x.id===id);
 const insumos = () => A.products.filter(p=>p.type==='insumo');
 const unitCostIns = i => (+i.content>0) ? (+i.price)/(+i.content) : 0;
-function alcanzaIns(i){
-  if(i.qty==null) return null;
-  const usan = A.products.filter(p=>p.type==='venta' && (p.recipe||[]).some(r=>r.id===i.id));
-  if(!usan.length) return null;
-  const gasto = usan.map(p=>+(p.recipe.find(r=>r.id===i.id).qty) * (i.unit==='u' ? 1 : 1+(+p.merma||0)/100));
-  if(new Set(gasto.map(x=>x.toFixed(4))).size!==1 || !(gasto[0]>0)) return null;
-  return { n: Math.max(0, Math.floor(+i.qty/gasto[0])), que: usan.every(p=>/oblea/i.test(p.name+' '+(p.cat||''))) ? 'obleas' : 'productos' };
-}
 async function loadAdminProducts(){
   const r = await run(()=> A.role==='vend' ? rpc('vend_inventario',{p_pin:A.pin}) : rpc('admin_productos',{p_clave:A.key}));
   if(r!==false){ A.products=r||[]; }
@@ -671,7 +666,7 @@ function renderInventory(){
     $('invBody').innerHTML = list.length ? list.map(p=>{
       const has=p.qty!=null, low=has && +p.qty<=+p.min;
       const paq = has && +p.content>0 ? `${num(p.qty/p.content,1)} paq.` : '';
-      const est = alcanzaIns(p);
+      const est = p.alcanza_ins;   // lo calcula la base
       return `<tr>
         <td><div class="pname">${esc(p.name)}</div>${!ro&&!(+p.price)?'<div class="pcat"><span class="badge warn">Falta el precio</span></div>':''}</td>
         <td class="num">${p.content?qtyU(p.content,p.unit):'—'}${ro?'':`<div class="pcat">${fmt(p.price)}</div>`}</td>
@@ -853,10 +848,6 @@ const firstOfMonth = () => bogotaDay().slice(0,8)+'01';
 $('descDesde').value=firstOfMonth(); $('descHasta').value=bogotaDay();
 $('descDesde').onchange=$('descHasta').onchange=()=>loadDescartes();
 const qtyD = (n,u) => unitOf(u)==='u' ? num(n,2)+' u' : qtyU(n,u);
-// costo de una unidad, igual que el servidor: receta (unidades exactas, el resto con merma) o costo a mano
-const costoBase = p => p.type==='insumo' ? unitCostIns(p) : (p.recipe||[]).length
-  ? p.recipe.reduce((s,r)=>{ const i=findA(r.id); return s+(i ? +r.qty*unitCostIns(i)*(i.unit==='u'?1:1+(+p.merma||0)/100) : 0); },0)
-  : (+p.cost||0);
 async function loadDescartes(){
   if(!A.key) return;
   if(!descLoaded && $('descHasta').value < bogotaDay()){ $('descDesde').value=firstOfMonth(); $('descHasta').value=bogotaDay(); }
@@ -902,7 +893,7 @@ function syncDesc(){
   $('descQty').step = ins&&u!=='u' ? 'any' : '1';
   $('descQtyHint').textContent = ins ? (p.qty!=null?`Quedan ${qtyU(p.qty,p.unit)}.`:'Este insumo no se ha contado: se registra la pérdida, pero no baja la existencia.')
     : tracked(p) ? `Hay ${p.stock} en stock.` : (p.recipe||[]).length ? 'También se sacan del inventario los insumos de su receta.' : '';
-  const q=+$('descQty').value||0, unit=costoBase(p);
+  const q=+$('descQty').value||0, unit=+p.base_cost||0;     // costo de una unidad, calculado por la base
   $('descPreview').innerHTML = q>0 ? `Pérdida: <b>−${fmt(q*unit)}</b> <span class="muted small">(${qtyD(q,ins?p.unit:'u')} × ${'$'+num(unit,unit<100?2:0)}${ins&&u!=='u'?' el '+u:' c/u'})</span>` : `Costo por ${ins&&u!=='u'?u:'unidad'}: ${'$'+num(unit,2)}`;
 }
 $('descNew').onclick=openDescarte;
@@ -997,7 +988,7 @@ function renderClose(){
   $('salesBody').innerHTML = all.length ? all.slice().reverse().map(s=>`<tr class="${s.void?'void':''}">
     <td class="num" style="text-align:left"><b>N.º ${pad3(s.order)}</b>${s.edited?'<div class="pcat">editada</div>':''}</td>
     <td class="num" style="text-align:left">${fTime(s.date)}</td>
-    <td class="strike">${s.items.map(i=>`${esc(i.qty)}× ${esc(i.name)}${addsTxt(i)?` <span class="pcat">(+ ${esc(addsTxt(i))})</span>`:''}`).join('<br>')}${+s.discount>0?`<div class="pcat">Descuento mesero −${fmt(s.discount)}</div>`:''}</td>
+    <td class="strike">${s.seller?`<div class="pcat">Atendió ${esc(s.seller)}</div>`:''}${s.items.map(i=>`${esc(i.qty)}× ${esc(i.name)}${addsTxt(i)?` <span class="pcat">(+ ${esc(addsTxt(i))})</span>`:''}`).join('<br>')}${+s.discount>0?`<div class="pcat">Descuento mesero −${fmt(s.discount)}</div>`:''}</td>
     <td>${s.void?'<span class="badge mute">Anulada</span>':s.pay==='efectivo'?`<span class="badge cash">Efectivo</span>`:`<span class="badge transfer">Transferencia</span>`}</td>
     <td class="num strike"><b>${fmt(s.total)}</b></td>
     <td class="num"><div class="actions">
@@ -1052,10 +1043,8 @@ setInterval(()=>{ if((A.key||A.role==='vend') && !document.hidden && $('page-cie
 //  Ajustes (administrador)
 // =====================================================================
 function renderSettings(){
-  $('pinState').textContent = S.pidePin
-    ? 'Se pide un PIN para abrir y cerrar caja y para vender.'
-    : 'No hay PIN: cualquier persona con el enlace puede abrir caja y vender.';
-  $('clearPin').hidden=!S.pidePin; $('newPin').value='';
+  $('vendName').value=''; $('vendPass').value=''; $('llaveIn').value=S.llave||'';
+  loadVendedores();
   $('meseroState').textContent = S.pideMesero
     ? 'Ya hay un código. Los meseros lo escriben al tocar "Descuento mesero" en la venta.'
     : 'Aún no hay código: el descuento de meseros está desactivado.';
@@ -1067,13 +1056,53 @@ $('setDescMax').onclick=async()=>{
   const r=await run(()=>rpc('admin_fijar_descuento_max',{p_clave:A.key,p_pct:v}),'Descuento máximo guardado');
   if(r!==false){ S.descMax=+r||v; renderSettings(); }
 };
-$('setPin').onclick=async()=>{
-  const v=$('newPin').value.trim(); if(v.length<6){ toast('El PIN debe tener al menos 6 caracteres.'); return; }
-  if(await run(()=>rpc('admin_fijar_pin',{p_clave:A.key,p_pin:v}),'PIN de vendedor guardado')){ S.pidePin=true; pinStore.set(v); renderSettings(); }
+// ---- vendedores: cada uno con su nombre y su contraseña (las contraseñas no se pueden ver, solo cambiar) ----
+let vendedores=[];
+async function loadVendedores(){
+  const r=await run(()=>rpc('admin_vendedores',{p_clave:A.key}));
+  if(r!==false) vendedores=r||[];
+  const act=vendedores.filter(v=>v.active).length;
+  S.pidePin = act>0;
+  $('vendState').textContent = act
+    ? `${act===1?'1 vendedor activo':act+' vendedores activos'}. Cada uno vende, abre y cierra caja con su contraseña, y la venta guarda quién la atendió.`
+    : 'No hay vendedores activos: cualquier persona con el enlace puede abrir caja y vender. Agrega al menos uno.';
+  $('vendBody').innerHTML = vendedores.length ? vendedores.map(v=>`<tr>
+      <td><div class="pname">${esc(v.name)}</div></td>
+      <td>${v.active?'<span class="badge ok">Activa</span>':'<span class="badge mute">Desactivada</span>'}</td>
+      <td class="num">${esc(v.sales_today)}</td>
+      <td class="num"><div class="actions">
+        <button class="btn ghost sm" data-vpass="${esc(v.id)}">Cambiar contraseña</button>
+        <button class="btn ghost sm" data-vact="${esc(v.id)}">${v.active?'Desactivar':'Activar'}</button>
+        <button class="icon-btn del" data-vdel="${esc(v.id)}" aria-label="Eliminar a ${esc(v.name)}" title="Eliminar">${icon('trash')}</button></div></td></tr>`).join('')
+    : '<tr><td colspan="4" class="empty">Aún no hay vendedores</td></tr>';
+  const find=id=>vendedores.find(v=>v.id===id);
+  $('vendBody').querySelectorAll('[data-vpass]').forEach(b=>b.onclick=async()=>{
+    const v=find(b.dataset.vpass); if(!v) return;
+    await askSecret({title:'Nueva contraseña de '+v.name, label:'Nueva contraseña (mínimo 6, letras y números)', twice:true, min:6,
+      check: async x=>{ try{ await rpc('admin_guardar_vendedor',{p_clave:A.key,p_id:v.id,p_nombre:v.name,p_contra:x}); toast('Contraseña cambiada'); return ''; }catch(e){ return errText(e); } }});
+  });
+  $('vendBody').querySelectorAll('[data-vact]').forEach(b=>b.onclick=async()=>{
+    const v=find(b.dataset.vact); if(!v) return;
+    if(v.active && !await askConfirm('Desactivar vendedor',`${v.name} ya no podrá vender ni entrar con su contraseña. Se puede volver a activar.`,'Desactivar')) return;
+    if(await run(()=>rpc('admin_vendedor_activo',{p_clave:A.key,p_id:v.id,p_activo:!v.active}), v.active?'Vendedor desactivado':'Vendedor activado')) loadVendedores();
+  });
+  $('vendBody').querySelectorAll('[data-vdel]').forEach(b=>b.onclick=async()=>{
+    const v=find(b.dataset.vdel); if(!v) return;
+    if(!await askConfirm('Eliminar vendedor',`¿Eliminar a ${v.name}? Sus ventas pasadas conservan su nombre.`,'Eliminar')) return;
+    if(await run(()=>rpc('admin_eliminar_vendedor',{p_clave:A.key,p_id:v.id}),'Vendedor eliminado')) loadVendedores();
+  });
+}
+$('vendAdd').onclick=async()=>{
+  const n=$('vendName').value.trim(), p=$('vendPass').value;
+  if(!n){ toast('Escribe el nombre del vendedor.'); $('vendName').focus(); return; }
+  if(p.length<6){ toast('La contraseña debe tener al menos 6 caracteres.'); $('vendPass').focus(); return; }
+  if(await run(()=>rpc('admin_guardar_vendedor',{p_clave:A.key,p_id:null,p_nombre:n,p_contra:p}),'Vendedor agregado')){ $('vendName').value=''; $('vendPass').value=''; loadVendedores(); }
 };
-$('clearPin').onclick=async()=>{
-  if(!await askConfirm('Quitar PIN','Cualquier persona con el enlace podrá abrir caja y vender.','Quitar PIN')) return;
-  if(await run(()=>rpc('admin_fijar_pin',{p_clave:A.key,p_pin:''}),'PIN eliminado')){ S.pidePin=false; pinStore.set(''); renderSettings(); }
+$('setLlave').onclick=async()=>{
+  const v=$('llaveIn').value.trim();
+  if(!v && !await askConfirm('Quitar la llave','No se mostrará ninguna llave al pagar por transferencia.','Quitar')) return;
+  const r=await run(()=>rpc('admin_fijar_llave',{p_clave:A.key,p_llave:v}), v?'Llave guardada':'Llave quitada');
+  if(r!==false){ S.llave=r||''; $('tkValue').textContent=S.llave; $('llaveIn').value=S.llave; }
 };
 $('setMesero').onclick=async()=>{
   const v=$('newMesero').value.trim(); if(v.length<6){ toast('El código debe tener al menos 6 caracteres.'); return; }
@@ -1100,8 +1129,8 @@ $('importFile').onchange=e=>{
     let d; try{ d=JSON.parse(r.result); if(!Array.isArray(d.products)||!Array.isArray(d.sales)) throw 0; }catch(err){ toast('Ese archivo no es un respaldo válido.'); return; }
     if(!await askConfirm('Subir respaldo',`Se actualizarán ${d.products.length} productos y se agregarán las ventas que falten (${d.sales.length} en el archivo).`,'Subir')) return;
     toast('Subiendo respaldo…');
-    const res = await run(()=>rpc('admin_restaurar',{p_clave:A.key,p_datos:{products:d.products,sales:d.sales}}));
-    if(res!==false) toast(`Respaldo subido: ${res.productos} productos y ${res.ventas} ventas nuevas`);
+    const res = await run(()=>rpc('admin_restaurar',{p_clave:A.key,p_datos:{products:d.products,sales:d.sales,descartes:Array.isArray(d.descartes)?d.descartes:[]}}));
+    if(res!==false) toast(`Respaldo subido: ${res.productos} productos, ${res.ventas} ventas y ${res.descartes||0} descartes nuevos`);
   }; r.readAsText(f);
 };
 

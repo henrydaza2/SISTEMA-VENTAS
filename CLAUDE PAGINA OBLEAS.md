@@ -56,8 +56,8 @@ node test.mjs ..
 node server.mjs ..
 ```
 - `npm install` instala PGlite 0.3.16, que trae pgcrypto.
-- `node test.mjs ..` corre las pruebas SQL: `supabase.sql` + `supabase-v2.sql` + `supabase-v3.sql` + `supabase-v4.sql` + `supabase-v5.sql` sobre un Postgres local. **Hoy pasan 85 de 85.**
-- `node server.mjs ..` levanta http://localhost:8787 con una API falsa de Supabase y la página real. Datos de prueba: PIN `654321`, código de meseros `777777`, contraseña de administrador `admin123`.
+- `node test.mjs ..` corre las pruebas SQL: `supabase.sql` + `supabase-v2.sql` + `supabase-v3.sql` + `supabase-v4.sql` + `supabase-v5.sql` sobre un Postgres local. **Hoy pasan 95 de 95 (y 13 de la página con `node pagina.mjs ..`).**
+- `node server.mjs ..` levanta http://localhost:8787 con una API falsa de Supabase y la página real. Datos de prueba: vendedor con contraseña `654321`, código de meseros `777777`, contraseña de administrador `admin123`.
 - Para verla en el navegador de la app: `preview_start` con url `http://localhost:8787`.
 
 ## Límites (no hacer)
