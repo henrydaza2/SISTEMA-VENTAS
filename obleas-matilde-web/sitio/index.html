@@ -124,6 +124,17 @@ main{padding:28px 32px 48px;min-width:0}
 .notice .t{flex:1;min-width:200px}
 .notice.edit{background:var(--transfer-soft);border-color:transparent;color:var(--ink)}
 .notice.warn{background:var(--brand-soft);border-color:transparent;color:var(--ink)}
+/* subcategorías en Inventario */
+#invBody tr.grp td{background:var(--surface-2);font-weight:800;font-size:14px;padding:8px 10px}
+#invBody tr.grp .n{color:var(--muted);font-weight:700;margin-left:4px}
+/* descartes */
+.desc-top{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
+.desc-top .field{min-width:140px;flex:1}
+.desc-top .btn{flex:none}
+.desc-total{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 12px;margin:0 0 6px;padding:12px 14px;border-radius:12px;background:var(--danger-soft);font-weight:700}
+.desc-total b{font-family:"Fredoka",system-ui,sans-serif;font-size:24px;color:var(--danger)}
+#descView h3{font-size:15px;margin:18px 0 6px}
+body.ro [data-f="descarte"]{display:none!important}
 /* modo vendedor: solo lectura */
 .ro-only{display:none!important}
 body.ro .ro-only{display:inline-flex!important}
@@ -389,7 +400,11 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
   .card{padding:16px}
   .adminbar{padding:8px 12px;gap:8px}
   .adminbar .msg{font-size:14px;min-width:0}
-  .toolbar .seg{width:100%;display:grid;grid-template-columns:repeat(3,1fr)}
+  .toolbar .seg{width:100%;display:grid;grid-template-columns:repeat(2,1fr)}
+  body.ro .toolbar .seg{grid-template-columns:repeat(3,1fr)}
+  table.rt tbody tr.grp{padding:10px 0 4px;border-bottom:0}
+  #invBody tr.grp td{background:none;padding:0;font-size:15px}
+  .desc-top .btn{width:100%}
   .seg button{padding:0 6px}
   .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
   .tile b{font-size:24px}
@@ -460,14 +475,14 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
   <aside class="side">
     <div class="logo"><div class="logo-mark">OM</div><div><b>Obleas Matilde</b><small>Punto de venta</small></div></div>
     <nav class="nav" aria-label="Secciones">
-      <button data-tab="vender" aria-current="page"><svg class="i"><use href="#i-cart"/></svg>Vender</button>
+      <button data-tab="vender" aria-current="page"><svg class="i"><use href="#i-cart"/></svg>Productos</button>
       <button data-tab="inventario"><svg class="i"><use href="#i-box"/></svg>Inventario<svg class="i lk"><use href="#i-lock"/></svg></button>
-      <button data-tab="cierre"><svg class="i"><use href="#i-receipt"/></svg>Cierre del día<svg class="i lk"><use href="#i-lock"/></svg></button>
+      <button data-tab="cierre"><svg class="i"><use href="#i-receipt"/></svg>Caja<svg class="i lk"><use href="#i-lock"/></svg></button>
       <button data-tab="ajustes"><svg class="i"><use href="#i-gear"/></svg>Ajustes<svg class="i lk"><use href="#i-lock"/></svg></button>
     </nav>
     <div class="today">
       <div class="lbl">Administración</div>
-      <div class="muted" style="margin-top:4px">Inventario, cierre y ajustes piden la contraseña.</div>
+      <div class="muted" style="margin-top:4px">Inventario, caja y ajustes piden un código.</div>
       <div class="sync" id="syncState"><i class="dot"></i><span>Conectando…</span></div>
     </div>
   </aside>
@@ -483,7 +498,7 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
     <!-- ===================== VENDER ===================== -->
     <section class="page active" id="page-vender">
       <div class="page-head">
-        <div><h1>Vender</h1><p>Toca un producto para agregarlo a la venta</p></div>
+        <div><h1>Productos</h1><p>Toca un producto para agregarlo a la venta</p></div>
         <div class="cajabar" id="cajaBar"></div>
       </div>
       <div class="notice edit" id="editBar" hidden>
@@ -552,14 +567,39 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
             <button data-f="venta" aria-pressed="true">Para vender</button>
             <button data-f="adicional" aria-pressed="false">Adicionales</button>
             <button data-f="insumo" aria-pressed="false">Insumos</button>
+            <button data-f="descarte" aria-pressed="false">Descartes</button>
           </div>
         </div>
         <p class="muted small" id="invHint" style="margin:-4px 0 12px"></p>
-        <div class="table-wrap">
+        <div class="table-wrap" id="invTableWrap">
           <table class="rt">
             <thead id="invHead"></thead>
             <tbody id="invBody"></tbody>
           </table>
+        </div>
+        <!-- Descartes: lo que se dañó o no cumplió la calidad -->
+        <div id="descView" hidden>
+          <div class="desc-top">
+            <div class="field"><label for="descDesde">Desde</label><input type="date" id="descDesde" class="input"></div>
+            <div class="field"><label for="descHasta">Hasta</label><input type="date" id="descHasta" class="input"></div>
+            <button class="btn danger" id="descNew"><svg class="i"><use href="#i-trash"/></svg>Registrar descarte</button>
+          </div>
+          <div class="desc-total"><span>Pérdida por descartes</span><b id="descTotal">$0</b><span class="muted small" id="descTotalN"></span></div>
+          <h3>Pérdida por producto</h3>
+          <div class="table-wrap">
+            <table class="rt">
+              <thead><tr><th>Producto o insumo</th><th class="num">Cantidad</th><th class="num">Veces</th><th class="num">Pérdida</th></tr></thead>
+              <tbody id="descSum"></tbody>
+              <tfoot id="descSumFoot"></tfoot>
+            </table>
+          </div>
+          <h3>Registro</h3>
+          <div class="table-wrap">
+            <table class="rt">
+              <thead><tr><th>Qué se descartó</th><th class="num">Cantidad</th><th>Motivo</th><th class="num">Pérdida</th><th><span class="sr">Acciones</span></th></tr></thead>
+              <tbody id="descList"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>
@@ -567,7 +607,7 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
     <!-- ===================== CIERRE ===================== -->
     <section class="page" id="page-cierre">
       <div class="page-head">
-        <div><h1>Cierre del día <span class="badge mute ro-only">Solo ver</span></h1><p id="closeTitle"></p></div>
+        <div><h1>Caja <span class="badge mute ro-only">Solo ver</span></h1><p id="closeTitle"></p></div>
         <div class="toolbar" style="margin:0">
           <label for="closeDate" class="sr">Fecha</label><input type="date" id="closeDate" class="input" style="width:auto">
           <button class="btn ghost sm" id="refreshBtn"><svg class="i"><use href="#i-refresh"/></svg>Actualizar</button>
@@ -672,9 +712,9 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
   </main>
 
   <nav class="bottomnav" aria-label="Secciones">
-    <button data-tab="vender" aria-current="page"><svg class="i"><use href="#i-cart"/></svg>Vender</button>
+    <button data-tab="vender" aria-current="page"><svg class="i"><use href="#i-cart"/></svg>Productos</button>
     <button data-tab="inventario"><svg class="i"><use href="#i-box"/></svg>Inventario</button>
-    <button data-tab="cierre"><svg class="i"><use href="#i-receipt"/></svg>Cierre</button>
+    <button data-tab="cierre"><svg class="i"><use href="#i-receipt"/></svg>Caja</button>
     <button data-tab="ajustes"><svg class="i"><use href="#i-gear"/></svg>Ajustes</button>
   </nav>
 </div>
@@ -693,7 +733,22 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
   <div class="dlg-foot"><button type="button" class="btn ghost" id="addsCancel">Cancelar</button><button type="button" class="btn" id="addsOk"><svg class="i"><use href="#i-cart-plus"/></svg>Agregar</button></div>
 </dialog>
 
-<!-- Quién entra a Inventario o Cierre -->
+<!-- Registrar un descarte -->
+<dialog id="descDialog" class="narrow" aria-labelledby="descTitle">
+  <form id="descForm">
+    <div class="dlg-head"><h2 id="descTitle">Registrar descarte</h2><button type="button" class="icon-btn" id="descClose" aria-label="Cerrar"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="dlg-body" style="grid-template-columns:1fr">
+      <div class="field"><label for="descProd">¿Qué se descartó?</label><select id="descProd" class="input"></select></div>
+      <div class="field"><label for="descQty" id="descQtyLbl">Cantidad</label><input id="descQty" class="input" type="number" min="0" step="1" inputmode="decimal" autocomplete="off"><div class="hint" id="descQtyHint"></div></div>
+      <div class="field"><label for="descReason">Motivo</label><select id="descReason" class="input"><option>Se dañó</option><option>No cumplió la calidad</option><option>Se venció</option><option>Se cayó o se rompió</option><option value="otro">Otro…</option></select><input id="descOther" class="input" placeholder="Escribe el motivo" maxlength="200" style="margin-top:8px" hidden aria-label="Otro motivo"></div>
+      <div class="preview" id="descPreview"></div>
+      <div id="descErr" role="alert" style="color:var(--danger);font-weight:600;min-height:1.5em"></div>
+    </div>
+    <div class="dlg-foot"><button type="button" class="btn ghost" id="descCancel">Cancelar</button><button type="submit" class="btn danger" id="descOk">Descartar</button></div>
+  </form>
+</dialog>
+
+<!-- Quién entra a Inventario o Caja -->
 <dialog id="roleDialog" class="narrow" aria-labelledby="roleTitle">
   <div class="dlg-head"><h2 id="roleTitle">¿Quién va a entrar?</h2><button type="button" class="icon-btn" id="roleClose" aria-label="Cerrar"><svg class="i"><use href="#i-x"/></svg></button></div>
   <div class="dlg-body" style="grid-template-columns:1fr">
@@ -731,7 +786,7 @@ dialog .dlg-head,dialog .dlg-foot{flex:none}
       <input type="hidden" id="pId">
       <div class="field full"><label for="pName">Nombre</label><input id="pName" class="input" required></div>
       <div class="field"><label for="pType">Tipo</label><select id="pType" class="input"><option value="venta">Para vender</option><option value="adicional">Adicional de oblea</option><option value="insumo">Insumo</option></select></div>
-      <div class="field" data-for="venta"><label for="pCat">Categoría</label><input id="pCat" class="input" list="catList" placeholder="Ej: Bolis en leche"><datalist id="catList"></datalist></div>
+      <div class="field" data-for="venta"><label for="pCatSel">Categoría</label><select id="pCatSel" class="input"></select><input id="pCat" class="input" placeholder="Nombre de la nueva categoría" maxlength="60" style="margin-top:8px" hidden aria-label="Nombre de la nueva categoría"><div class="hint">Elige "+ Nueva categoría" para crear otra (ej. Malteadas, Café)</div></div>
       <!-- venta / adicional -->
       <div class="field" data-for="venta adicional"><label for="pPrice">Precio de venta</label><input id="pPrice" class="input" type="number" min="0" step="any" inputmode="numeric"></div>
       <div class="field" data-for="venta adicional"><label for="pMerma">Merma (%)</label><input id="pMerma" class="input" type="number" min="0" step="any" inputmode="decimal"><div class="hint">Insumos extra por pérdida. No se suma a lo que va por unidades (galletas).</div></div>

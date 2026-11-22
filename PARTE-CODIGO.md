@@ -19,6 +19,7 @@ Este documento resume lo importante del código: cómo está armado, qué hace c
 | `obleas-matilde-web/supabase-v2.sql` | Caja, adicionales, recetas, costos, editar ventas, meseros | Ejecutado |
 | `obleas-matilde-web/supabase-v3.sql` | Seguridad: bloqueo de intentos, ventas sin duplicar, día de la caja, respaldos revisados, descuento máximo; incluye el arreglo de insumos | **Pendiente de ejecutar** |
 | `obleas-matilde-web/supabase-v4.sql` | Galletas automáticas (2 por oblea, también en obleas nuevas), estimado de cuánto alcanza, y vista de solo lectura para vendedores | **Pendiente de ejecutar** (después de v3) |
+| `obleas-matilde-web/supabase-v5.sql` | Descartes: sacar productos o insumos dañados y calcular la pérdida; el respaldo los incluye | **Pendiente de ejecutar** (después de v4) |
 | `obleas-matilde-web/supabase-fix-insumos.sql` | Devuelve 3 insumos a su tipo correcto | Reemplazado por v3 (no hace falta) |
 | `obleas-matilde-web/pruebas/` | Pruebas de la base de datos y servidor local de prueba | Herramienta |
 | `obleas-matilde-web/INSTRUCCIONES.md` | Guía de instalación (Supabase + Netlify) | Guía |
@@ -106,9 +107,9 @@ Supabase (PostgreSQL)
 
 | Sección | Qué hace | Clave |
 |---|---|---|
-| **Vender** | Productos por categoría, ventana de salsas y adicionales, carrito, descuento de meseros, cobro, ventana "Venta registrada", recibo imprimible de 80 mm | PIN |
-| **Inventario** | Pestañas Para vender, Adicionales e Insumos; recetas, merma, costo y margen; compras y conteo de insumos | Contraseña |
-| **Cierre del día** | Totales, ganancia, caja (cuadra / falta / sobra), unidades vendidas, ganancia por producto, insumos usados, editar y anular ventas, CSV | Contraseña |
+| **Productos** (antes Vender) | Productos por categoría, ventana de salsas y adicionales, carrito, descuento de meseros, cobro, ventana "Venta registrada", recibo imprimible de 80 mm | PIN |
+| **Inventario** | Pestañas Para vender (por categorías, se pueden crear nuevas), Adicionales, Insumos y Descartes; recetas, merma, costo y margen; compras y conteo de insumos | Contraseña |
+| **Caja** (antes Cierre del día; pide código cada vez que se entra) | Totales, ganancia, caja (cuadra / falta / sobra), unidades vendidas, ganancia por producto, insumos usados, editar y anular ventas, CSV | Contraseña |
 | **Ajustes** | PIN, código de meseros, contraseña y respaldos | Contraseña |
 
 **Detalles técnicos:**
@@ -140,7 +141,7 @@ node test.mjs ..
 node server.mjs ..
 ```
 
-- `test.mjs` (o `npm test`) corre **73 pruebas** de la base de datos (v1 a v4) en un Postgres local (PGlite). Todas pasan. Termina con error si alguna falla.
+- `test.mjs` (o `npm test`) corre **85 pruebas** de la base de datos (v1 a v5) en un Postgres local (PGlite). Todas pasan. Termina con error si alguna falla.
 - `server.mjs` levanta http://localhost:8787 (solo para este computador) con la página real, las reglas de `_headers` y una base de datos de prueba. Claves de prueba: PIN `654321`, código de meseros `777777`, contraseña `admin123`.
 - Nada de esto toca la página ni la base de datos reales.
 

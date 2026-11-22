@@ -5,7 +5,7 @@ const S = { menu:[], adds:[], loaded:false, tieneClave:false, pidePin:false, pid
 const A = { key:null, role:null, pin:null, products:[], sales:[], cajas:[], consumo:[] };     // sesión de administrador (solo en memoria)
 let sb = null;
 const SHOP = 'OBLEAS MATILDE';
-const ADMIN_TABS = { inventario:'Para entrar al inventario.', cierre:'Para ver el cierre del día.', ajustes:'Para entrar a los ajustes.' };
+const ADMIN_TABS = { inventario:'Para entrar al inventario.', cierre:'Para entrar a la caja. Siempre se pide el código.', ajustes:'Para entrar a los ajustes.' };
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -62,6 +62,7 @@ function errText(e){
     DESCUENTO_INVALIDO:'Descuento no válido.', NO_ACEPTA_ADICIONALES:'Ese producto no lleva adicionales.',
     PRODUCTO_NO_EXISTE:'Un producto ya no existe. Actualiza la página.', VENTA_ANULADA:'Esa venta está anulada.', VENTA_NO_EXISTE:'Esa venta ya no existe.',
     VENTA_VACIA:'La venta no tiene productos.', PAGO_INVALIDO:'Elige el método de pago.', VALOR_INVALIDO:'Hay un valor fuera de lo permitido.',
+    DESCARTE_NO_EXISTE:'Ese descarte ya no existe.',
     NO_CAMBIAR_TIPO:'No se puede cambiar el tipo de un producto que ya existe. Crea uno nuevo.',
     YA_EXISTE_CLAVE:'La contraseña ya fue creada desde otro dispositivo.', CLAVE_CORTA:'La contraseña debe tener al menos 8 caracteres.',
     PIN_CORTO:'Debe tener al menos 6 caracteres.', CANTIDAD_INVALIDA:'Cantidad no válida.', NOMBRE_VACIO:'Escribe un nombre.',
@@ -175,18 +176,22 @@ async function ensureAdmin(text){
 }
 // Inventario y Cierre: el administrador entra con su contraseña; un vendedor puede entrar
 // solo a mirar con su PIN (sin cambiar nada y sin ver costos ni el resultado de la caja)
-async function ensureView(text){
-  if(A.key || A.role==='vend') return true;
+// force: pedir el código aunque ya haya una sesión abierta (la Caja lo pide siempre)
+async function ensureView(text, force){
+  if(!force && (A.key || A.role==='vend')) return true;
+  if(force){ A.key=null; A.role=null; A.pin=null; A.products=[]; A.sales=[]; A.cajas=[]; A.consumo=[]; setRole(); }
   if(!S.loaded){ toast('Sin conexión con la base de datos.'); return false; }
   const who = await askRole(text);
   if(who==='admin') return ensureAdmin(text);
   if(who!=='vend') return false;
-  try{
-    const r = await withPin(async pin=>({pin, data:await rpc('vend_inventario',{p_pin:pin})}));
-    if(!r) return false;
-    A.role='vend'; A.pin=r.pin; A.products=r.data||[]; setRole();
-    return true;
-  }catch(e){ toast(errText(e)); return false; }
+  // el vendedor escribe su PIN cada vez que entra
+  let data=null;
+  const pin = !S.pidePin ? '' : await askSecret({title:'PIN de vendedor', text:(text||'')+' Solo podrás ver, sin hacer cambios.', label:'PIN',
+    check: async v=>{ try{ data=await rpc('vend_inventario',{p_pin:v}); return ''; }catch(e){ return errText(e); } }});
+  if(pin===null) return false;
+  if(!data){ try{ data=await rpc('vend_inventario',{p_pin:pin}); }catch(e){ toast(errText(e)); return false; } }
+  A.role='vend'; A.pin=pin; A.products=data||[]; setRole();
+  return true;
 }
 function askRole(text){
   return new Promise(res=>{
@@ -207,8 +212,8 @@ function setRole(){
   $('closeDate').disabled = ro;
 }
 function lockAdmin(silent){
-  A.key=null; A.role=null; A.pin=null; A.products=[]; A.sales=[]; A.cajas=[]; A.consumo=[]; setRole();
-  ['prodDialog','receiptDialog'].forEach(id=>{ if($(id).open) $(id).close(); });
+  A.key=null; A.role=null; A.pin=null; A.products=[]; A.sales=[]; A.cajas=[]; A.consumo=[]; setRole(); descLoaded=false; A.descartes=[];
+  ['prodDialog','receiptDialog','descDialog'].forEach(id=>{ if($(id).open) $(id).close(); });
   if(!$('page-vender').classList.contains('active')) show('vender');
   if(!silent) toast('Sesión cerrada');
 }
@@ -225,7 +230,7 @@ function show(tab){
 async function go(tab){
   if(ADMIN_TABS[tab]){
     // Ajustes es solo del administrador; Inventario y Cierre también los puede ver un vendedor
-    if(!(tab==='ajustes' ? await ensureAdmin(ADMIN_TABS[tab]) : await ensureView(ADMIN_TABS[tab]))) return;
+    if(!(tab==='ajustes' ? await ensureAdmin(ADMIN_TABS[tab]) : await ensureView(ADMIN_TABS[tab], tab==='cierre'))) return;
     show(tab);
     if(tab==='inventario') await loadAdminProducts();
     // con la caja abierta desde ayer (pasada la medianoche), el cierre muestra el día de la caja
@@ -617,8 +622,12 @@ function renderInvAlert(){
   if(go) go.onclick=()=>{ invFilter='insumo'; $('invSeg').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.f==='insumo')); renderInventory(); };
 }
 function renderInventory(){
+  if(A.role==='vend' && invFilter==='descarte') invFilter='venta';
+  $('invSeg').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.f===invFilter));
+  const desc = invFilter==='descarte';
+  $('invTableWrap').hidden = desc; $('descView').hidden = !desc;
   renderInvAlert();
-  $('catList').innerHTML = [...new Set(A.products.filter(p=>p.type==='venta').map(p=>p.cat).filter(Boolean))].sort().map(c=>`<option value="${esc(c)}">`).join('');
+  if(desc){ $('invHint').textContent='Saca del inventario lo que se dañó o no cumplió la calidad. La pérdida es lo que costó producirlo.'; descLoaded ? renderDescartes() : loadDescartes(); return; }
   const n=t=>A.products.filter(p=>p.type===t).length;
   $('invSub').textContent=`${n('venta')} productos · ${n('adicional')} adicionales · ${n('insumo')} insumos`;
   const q=$('invSearch').value.toLowerCase();
@@ -653,12 +662,16 @@ function renderInventory(){
   } else {
     $('invHint').textContent = invFilter==='adicional' ? 'Los adicionales se ofrecen al vender productos que los aceptan (las obleas).'
       : (ro ? '' : 'El costo sale de la receta (insumos + merma) o del costo escrito a mano. ')
-        + 'El stock de lo que tiene receta se calcula solo con los insumos que quedan. Las obleas comparten las galletas: el número dice cuántas salen de cada una si solo se hiciera esa.';
+        + 'El stock de lo que tiene receta se calcula con los insumos que quedan (cuántas salen de cada uno si solo se hiciera ese).';
     const venta = invFilter==='venta';
     $('invHead').innerHTML=`<tr><th>${venta?'Producto':'Adicional'}</th><th class="num">Precio</th>${ro?'':'<th class="num">Costo</th><th class="num">Ganancia</th><th class="num">Margen</th>'}${venta?'<th class="num">Stock</th>':''}${actTh}</tr>`;
-    $('invBody').innerHTML = list.length ? list.map(p=>{
+    const cols = (ro?3:6) + (actTh?1:0);
+    const nCat = c => list.filter(x=>(x.cat||'Sin categoría')===c).length;
+    const grp = (p,ix) => venta && (ix===0 || (list[ix-1].cat||'Sin categoría')!==(p.cat||'Sin categoría'))
+      ? `<tr class="grp"><td colspan="${cols}"><i class="dot" style="background:${catColor(p.cat,A.products.filter(x=>x.type==='venta'))}"></i> ${esc(p.cat||'Sin categoría')}<span class="n">${nCat(p.cat||'Sin categoría')}</span></td></tr>` : '';
+    $('invBody').innerHTML = list.length ? list.map((p,ix)=>{
       const c=+p.unit_cost||0, g=p.price-c;
-      return `<tr>
+      return `${grp(p,ix)}<tr>
         <td><div class="pname">${esc(p.name)}</div><div class="pcat">${p.type==='venta'?`<i class="dot" style="background:${catColor(p.cat,A.products.filter(x=>x.type==='venta'))}"></i> ${esc(p.cat||'Sin categoría')}`:''}${(p.recipe||[]).length?` · receta${+p.merma?` + ${num(p.merma)} % merma`:''}`:''}${p.incl?` · incluye ${plS(p.incl)}`:''}${p.adds_ok?' · acepta adicionales':''}${p.salsa?' · salsa':''}</div></td>
         <td class="num">${fmt(p.price)}</td>
         ${ro?'':`<td class="num">${c?fmt(c):'<span class="badge warn">Sin costo</span>'}</td>
@@ -751,15 +764,27 @@ function updatePreview(){
 }
 ['pPrice','pMerma','pCost'].forEach(id=>$(id).oninput=updatePreview);
 $('pType').onchange=syncType; $('pUnit').onchange=syncType;
+// Categorías: las que ya existen (obleas primero) y la opción de crear una nueva
+function fillCats(selected){
+  const cats=[...new Set(A.products.filter(p=>p.type==='venta').map(p=>p.cat).filter(Boolean))]
+    .sort((a,b)=>(/oblea/i.test(b)-/oblea/i.test(a))||a.localeCompare(b));
+  $('pCatSel').innerHTML = cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('') + '<option value="__new">+ Nueva categoría…</option>';
+  const existe = cats.includes(selected);
+  $('pCatSel').value = existe ? selected : (selected || !cats.length ? '__new' : cats[0]);
+  $('pCat').value = existe ? '' : (selected||'');
+  $('pCat').hidden = $('pCatSel').value!=='__new';
+}
+const catValue = () => $('pCatSel').value==='__new' ? $('pCat').value.trim() : $('pCatSel').value;
+$('pCatSel').onchange=()=>{ const n=$('pCatSel').value==='__new'; $('pCat').hidden=!n; if(n) $('pCat').focus(); };
 function resetForm(type){
   $('prodForm').reset(); $('pId').value=''; $('pType').value=type||'venta'; $('pType').disabled=false; $('pStock').dataset.orig='';
   $('pMin').value=5; $('pMerma').value= type==='adicional'?15:0; $('pUnit').value='g';
-  $('formTitle').textContent='Nuevo'; $('saveBtn').textContent='Agregar'; setRecipe([]); syncType();
+  $('formTitle').textContent='Nuevo'; $('saveBtn').textContent='Agregar'; setRecipe([]); fillCats(''); syncType();
 }
 function editProduct(id){
   const p=findA(id); if(!p) return;
   resetForm(p.type);
-  $('pId').value=p.id; $('pName').value=p.name; $('pCat').value=p.cat||'';
+  $('pId').value=p.id; $('pName').value=p.name; fillCats(p.type==='venta'?(p.cat||''):'');
   if(p.type==='insumo'){
     $('pUnit').value=p.unit||'g'; $('pContent').value=p.content??''; $('pBuy').value=+p.price||''; $('pMinIns').value=p.min??'';
   } else {
@@ -784,7 +809,9 @@ $('prodForm').onsubmit=async e=>{
     data={id:$('pId').value||null,name,type,unit:$('pUnit').value,content:+$('pContent').value,price:+$('pBuy').value||0,min:Math.round(+$('pMinIns').value||0)};
   } else {
     const sv=$('pStock').value.trim();
-    data={id:$('pId').value||null,name,type,cat:type==='venta'?$('pCat').value.trim():'Adicionales',price:+$('pPrice').value||0,
+    const cat = type==='venta' ? catValue() : 'Adicionales';
+    if(type==='venta' && !cat){ toast('Escribe el nombre de la nueva categoría.'); $('pCat').focus(); return; }
+    data={id:$('pId').value||null,name,type,cat,price:+$('pPrice').value||0,
       cost:+$('pCost').value||0,merma:+$('pMerma').value||0,recipe:recipeRowsData(),
       min:parseInt($('pMin').value,10)||0,adds_ok:type==='venta'&&$('pAddsOk').checked,
       incl:type==='venta'?Math.max(0,parseInt($('pIncl').value,10)||0):0, salsa:type==='adicional'&&$('pSalsa').checked};
@@ -799,11 +826,92 @@ $('prodForm').onsubmit=async e=>{
 };
 
 // =====================================================================
-//  Cierre del día (administrador)
+//  Descartes (administrador): lo que se dañó o no cumplió la calidad
+// =====================================================================
+let descLoaded=false; A.descartes=[];
+const firstOfMonth = () => bogotaDay().slice(0,8)+'01';
+$('descDesde').value=firstOfMonth(); $('descHasta').value=bogotaDay();
+$('descDesde').onchange=$('descHasta').onchange=()=>loadDescartes();
+const qtyD = (n,u) => unitOf(u)==='u' ? num(n,2)+' u' : qtyU(n,u);
+// costo de una unidad, igual que el servidor: receta (unidades exactas, el resto con merma) o costo a mano
+const costoBase = p => p.type==='insumo' ? unitCostIns(p) : (p.recipe||[]).length
+  ? p.recipe.reduce((s,r)=>{ const i=findA(r.id); return s+(i ? +r.qty*unitCostIns(i)*(i.unit==='u'?1:1+(+p.merma||0)/100) : 0); },0)
+  : (+p.cost||0);
+async function loadDescartes(){
+  if(!A.key) return;
+  const r=await run(()=>rpc('admin_descartes',{p_clave:A.key,p_desde:$('descDesde').value||null,p_hasta:$('descHasta').value||null}));
+  if(r!==false){ A.descartes=r||[]; descLoaded=true; }
+  renderDescartes();
+}
+function renderDescartes(){
+  const q=$('invSearch').value.toLowerCase();
+  const all=A.descartes.filter(d=>String(d.name).toLowerCase().includes(q)), ok=all.filter(d=>!d.void);
+  const total=ok.reduce((a,d)=>a+ +d.cost,0);
+  $('descTotal').textContent='−'+fmt(total); $('descTotalN').textContent=plural(ok.length,'descarte','descartes');
+  const agg={};
+  ok.forEach(d=>{ const a=agg[d.product]=agg[d.product]||{name:d.name,unit:d.unit,q:0,c:0,n:0}; a.q+=+d.qty; a.c+=+d.cost; a.n++; });
+  const rows=Object.values(agg).sort((a,b)=>b.c-a.c);
+  $('descSum').innerHTML = rows.length ? rows.map(x=>`<tr><td><div class="pname">${esc(x.name)}</div></td><td class="num">${qtyD(x.q,x.unit)}</td><td class="num">${esc(x.n)}</td><td class="num neg-v">−${fmt(x.c)}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="empty">Sin descartes en estas fechas</td></tr>';
+  $('descSumFoot').innerHTML = rows.length ? `<tr><td colspan="3">Pérdida total</td><td class="num neg-v">−${fmt(total)}</td></tr>` : '';
+  $('descList').innerHTML = all.length ? all.map(d=>`<tr class="${d.void?'void':''}">
+      <td><b class="strike">${esc(d.name)}</b><div class="pcat">${fDate(d.date)} ${fTime(d.date)}${d.void?' · anulado':''}</div></td>
+      <td class="num strike">${qtyD(d.qty,d.unit)}</td>
+      <td>${esc(d.reason)||'—'}</td>
+      <td class="num strike">−${fmt(d.cost)}</td>
+      <td class="num">${d.void?'':`<button class="btn ghost sm" data-dvoid="${esc(d.uid)}">Anular</button>`}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty">Sin descartes en estas fechas</td></tr>';
+  $('descList').querySelectorAll('[data-dvoid]').forEach(b=>b.onclick=async()=>{
+    const d=A.descartes.find(x=>x.uid===b.dataset.dvoid); if(!d) return;
+    if(!await askConfirm('Anular descarte',`¿Anular el descarte de ${d.name}? Lo descartado vuelve al inventario.`,'Anular')) return;
+    if(await run(()=>rpc('admin_anular_descarte',{p_clave:A.key,p_uid:d.uid}),'Descarte anulado')){ await loadAdminProducts(); await loadDescartes(); }
+  });
+}
+function openDescarte(){
+  const g=(t,l)=>{ const ps=A.products.filter(p=>p.type===t).sort((a,b)=>a.name.localeCompare(b.name));
+    return ps.length?`<optgroup label="${l}">${ps.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</optgroup>`:''; };
+  $('descProd').innerHTML = g('venta','Productos para vender')+g('adicional','Adicionales')+g('insumo','Insumos');
+  $('descQty').value=''; $('descReason').selectedIndex=0; $('descOther').hidden=true; $('descOther').value=''; $('descErr').textContent=''; $('descOk').disabled=false;
+  syncDesc(); $('descDialog').showModal(); $('descProd').focus();
+}
+function syncDesc(){
+  const p=findA($('descProd').value); if(!p){ $('descPreview').textContent=''; return; }
+  const ins=p.type==='insumo', u=unitOf(p.unit);
+  $('descQtyLbl').textContent = ins ? `Cantidad (${u==='u'?'unidades':u==='ml'?'mililitros':'gramos'})` : 'Cantidad (unidades)';
+  $('descQty').step = ins&&u!=='u' ? 'any' : '1';
+  $('descQtyHint').textContent = ins ? (p.qty!=null?`Quedan ${qtyU(p.qty,p.unit)}.`:'Este insumo no se ha contado: se registra la pérdida, pero no baja la existencia.')
+    : tracked(p) ? `Hay ${p.stock} en stock.` : (p.recipe||[]).length ? 'También se sacan del inventario los insumos de su receta.' : '';
+  const q=+$('descQty').value||0, unit=costoBase(p);
+  $('descPreview').innerHTML = q>0 ? `Pérdida: <b>−${fmt(q*unit)}</b> <span class="muted small">(${qtyD(q,ins?p.unit:'u')} × ${'$'+num(unit,unit<100?2:0)}${ins&&u!=='u'?' el '+u:' c/u'})</span>` : `Costo por ${ins&&u!=='u'?u:'unidad'}: ${'$'+num(unit,2)}`;
+}
+$('descNew').onclick=openDescarte;
+$('descProd').onchange=syncDesc; $('descQty').oninput=syncDesc;
+$('descReason').onchange=()=>{ const o=$('descReason').value==='otro'; $('descOther').hidden=!o; if(o) $('descOther').focus(); };
+$('descClose').onclick=$('descCancel').onclick=()=>$('descDialog').close();
+$('descForm').onsubmit=async e=>{
+  e.preventDefault();
+  const p=findA($('descProd').value), q=+$('descQty').value;
+  if(!p){ $('descErr').textContent='Elige qué se descartó.'; return; }
+  if(!(q>0)){ $('descErr').textContent='Escribe la cantidad.'; return; }
+  if(p.type!=='insumo' && !Number.isInteger(q)){ $('descErr').textContent='Los productos se descartan por unidades completas.'; return; }
+  const motivo = $('descReason').value==='otro' ? $('descOther').value.trim() : $('descReason').value;
+  $('descOk').disabled=true; $('descErr').textContent='';
+  try{
+    const d=await rpc('admin_descartar',{p_clave:A.key,p_id:p.id,p_cantidad:q,p_motivo:motivo});
+    $('descDialog').close(); toast(`Descarte registrado. Pérdida −${fmt(d.cost)}`);
+    await loadAdminProducts(); await loadDescartes();
+  }catch(err){
+    $('descErr').textContent=errText(err); $('descOk').disabled=false;
+    if(String(err.message).includes('CLAVE_INCORRECTA')){ $('descDialog').close(); lockAdmin(true); }
+  }
+};
+
+// =====================================================================
+//  Caja (cierre del día)
 // =====================================================================
 $('closeDate').value = bogotaDay();
 $('closeDate').onchange = loadSales;
-$('refreshBtn').onclick = async()=>{ await loadSales(); toast('Cierre actualizado'); };
+$('refreshBtn').onclick = async()=>{ await loadSales(); toast('Caja actualizada'); };
 async function loadSales(quiet){
   if(A.role==='vend'){
     const [r,p] = await Promise.all([
@@ -816,10 +924,12 @@ async function loadSales(quiet){
   }
   if(!A.key) return;
   const dia=$('closeDate').value||null;
-  const [v,c,p] = await Promise.all([
+  const [v,c,p,d] = await Promise.all([
     run(()=>rpc('admin_ventas',{p_clave:A.key,p_dia:dia}),null,quiet===true),
     run(()=>rpc('admin_cajas',{p_clave:A.key,p_dia:dia}),null,quiet===true),
-    run(()=>rpc('admin_productos',{p_clave:A.key}),null,quiet===true)]);
+    run(()=>rpc('admin_productos',{p_clave:A.key}),null,quiet===true),
+    run(()=>rpc('admin_descartes',{p_clave:A.key,p_desde:dia,p_hasta:dia}),null,true)]);
+  A.descDia = d!==false ? (d||[]) : [];
   if(v!==false) A.sales=v||[];
   if(c!==false) A.cajas=c||[];
   if(p!==false) A.products=p||[];
@@ -831,13 +941,14 @@ function renderClose(){
   const all=A.sales, ok=all.filter(s=>!s.void);
   const f=m=>ok.filter(s=>s.pay===m), sum=l=>l.reduce((a,s)=>a+ +s.total,0);
   const cash=sum(f('efectivo')), tr=sum(f('transferencia')), tot=cash+tr;
-  const cost=ok.reduce((a,s)=>a+saleCost(s),0), desc=ok.reduce((a,s)=>a+(+s.discount||0),0), gan=tot-cost;
+  const perdida=(A.role==='vend'?[]:(A.descDia||[])).filter(d=>!d.void).reduce((a,d)=>a+ +d.cost,0);
+  const cost=ok.reduce((a,s)=>a+saleCost(s),0), desc=ok.reduce((a,s)=>a+(+s.discount||0),0), gan=tot-cost-perdida;
   const d=new Date($('closeDate').value+'T12:00');
   $('closeTitle').textContent = isNaN(d) ? '' : d.toLocaleDateString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase());
   $('sTotal').textContent=fmt(tot); $('sTotalN').textContent=plural(ok.length)+(all.length>ok.length?` · ${all.length-ok.length} anuladas`:'');
   $('sCash').textContent=fmt(cash); $('sCashN').textContent=plural(f('efectivo').length);
   $('sTransfer').textContent=fmt(tr); $('sTransferN').textContent=plural(f('transferencia').length);
-  $('sProfit').textContent=fmt(gan); $('sProfitN').textContent=`Costo ${fmt(cost)}${desc?` · Descuentos ${fmt(desc)}`:''} · Margen ${pct(gan,tot)}`;
+  $('sProfit').textContent=fmt(gan); $('sProfitN').textContent=`Costo ${fmt(cost)}${desc?` · Descuentos ${fmt(desc)}`:''}${perdida?` · Descartes −${fmt(perdida)}`:''} · Margen ${pct(gan,tot)}`;
 
   // Caja (el vendedor no ve "debería haber", lo contado ni el resultado)
   const ro = A.role==='vend';

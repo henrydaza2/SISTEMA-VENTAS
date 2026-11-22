@@ -18,7 +18,7 @@ const originOf = req => RED && /^[\w.-]+:\d+$/.test(req.headers.host || '') ? `h
 
 const db = new PGlite({ extensions: { pgcrypto } });
 await db.exec(`create role anon; create role authenticated; create schema extensions;`);
-for (const f of ['supabase.sql', 'supabase-v2.sql', 'supabase-v3.sql', 'supabase-v4.sql']) {
+for (const f of ['supabase.sql', 'supabase-v2.sql', 'supabase-v3.sql', 'supabase-v4.sql', 'supabase-v5.sql']) {
   if (fs.existsSync(path.join(dir, f))) await db.exec(fs.readFileSync(path.join(dir, f), 'utf8'));
 }
 // datos de prueba: contraseña admin123, PIN 654321, código de meseros 777777, insumos contados

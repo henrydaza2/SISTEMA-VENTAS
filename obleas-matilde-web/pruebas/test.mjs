@@ -10,6 +10,7 @@ const v1 = fs.readFileSync(dir + '/supabase.sql', 'utf8');
 const v2 = fs.readFileSync(dir + '/supabase-v2.sql', 'utf8');
 const v3 = fs.readFileSync(dir + '/supabase-v3.sql', 'utf8');
 const v4 = fs.readFileSync(dir + '/supabase-v4.sql', 'utf8');
+const v5 = fs.readFileSync(dir + '/supabase-v5.sql', 'utf8');
 
 let ok = 0, bad = 0;
 const t = async (name, fn) => { try { const r = await fn(); console.log('OK  ', name, r === undefined ? '' : JSON.stringify(r).slice(0, 300)); ok++; } catch (e) { console.log('FAIL', name, e.message); bad++; } };
@@ -42,6 +43,9 @@ await t('v3 se ejecuta otra vez (idempotente)', async () => { await db.exec(v3);
 await db.exec(`insert into productos (id, nombre, categoria, tipo, precio) values ('meseros-oblea', 'Oblea solo Arequipe Meseros', 'Obleas', 'venta', 2000)`);
 await t('v4 se ejecuta', async () => { await db.exec(v4); });
 await t('v4 se ejecuta otra vez (idempotente)', async () => { await db.exec(v4); });
+await t('v5 se ejecuta', async () => { await db.exec(v5); });
+await t('v3 + v4 + v5 juntos se pueden volver a ejecutar', async () => { await db.exec(v3 + '\n' + v4 + '\n' + v5); });
+await t('después de repetir v3 + v4 + v5 las galletas siguen exactas', async () => (await q1(`select round(public._costo_unit('oblea-arequipe'),2) c`)).c);
 await t('todas las obleas del menú usan 2 galletas', async () => {
   const r = (await db.query(`select p.id, r.cantidad::int c from productos p left join recetas r on r.producto_id = p.id and r.insumo_id = 'ins-obleas'
                              where p.tipo = 'venta' and p.nombre ilike '%oblea%' order by p.id`)).rows;
@@ -210,6 +214,40 @@ await t('vendedor ve la caja sin conteo ni costos', async () => {
   return { dia: c.dia, ventas: c.ventas.length, cajas: c.cajas.length, consumo: c.consumo.length };
 });
 await fails('el vendedor no puede usar funciones de administrador con su PIN', () => rpc('admin_productos', { p_clave: PIN }), 'CLAVE_INCORRECTA');
+await db.exec(`delete from intentos`);
+
+// --- descartes (v5) ---
+await t('descartar 200 g de arequipe baja la existencia y calcula la pérdida', async () => {
+  await db.exec(`update productos set existencia = 5000 where id = 'ins-arequipe'`);
+  const d = await rpc('admin_descartar', { p_clave: CLAVE, p_id: 'ins-arequipe', p_cantidad: 200, p_motivo: 'Se dañó' });
+  eq(+(await q1(`select existencia from productos where id = 'ins-arequipe'`)).existencia, 4800, 'existencia');
+  eq(+d.cost, 2480, 'pérdida 200 g x $12,4'); return { cost: d.cost, unit: d.unit };
+});
+let dOblea;
+await t('descartar 3 obleas saca 6 galletas y su arequipe, y la pérdida es su costo', async () => {
+  await db.exec(`update productos set existencia = 100 where id = 'ins-obleas'`);
+  dOblea = await rpc('admin_descartar', { p_clave: CLAVE, p_id: 'oblea-arequipe', p_cantidad: 3, p_motivo: 'No cumplió la calidad' });
+  eq(+(await q1(`select existencia from productos where id = 'ins-obleas'`)).existencia, 94, 'galletas');
+  const c = +(await q1(`select round(public._costo_unit('oblea-arequipe'),2) c`)).c;
+  eq(+dOblea.cost, Math.round(c * 3 * 100) / 100, 'pérdida'); return { cost: dOblea.cost, consumo: dOblea.consumo.length };
+});
+await t('descartar un boli con stock baja el stock', async () => {
+  await db.exec(`update productos set stock = 10 where id = 'boli-milo'`);
+  const d = await rpc('admin_descartar', { p_clave: CLAVE, p_id: 'boli-milo', p_cantidad: 2, p_motivo: 'Se venció' });
+  eq((await q1(`select stock from productos where id = 'boli-milo'`)).stock, 8, 'stock'); return +d.cost;
+});
+await fails('no se descartan medias obleas', () => rpc('admin_descartar', { p_clave: CLAVE, p_id: 'oblea-arequipe', p_cantidad: 1.5 }), 'CANTIDAD_INVALIDA');
+await fails('no se descarta más stock del que hay', () => rpc('admin_descartar', { p_clave: CLAVE, p_id: 'boli-milo', p_cantidad: 50 }), 'SIN_STOCK');
+await t('anular un descarte devuelve las galletas', async () => {
+  await rpc('admin_anular_descarte', { p_clave: CLAVE, p_uid: dOblea.uid });
+  eq(+(await q1(`select existencia from productos where id = 'ins-obleas'`)).existencia, 100, 'galletas'); return 'devueltas';
+});
+await t('lista de descartes del día con la pérdida', async () => {
+  const l = await rpc('admin_descartes', { p_clave: CLAVE, p_desde: null, p_hasta: null });
+  return { total: l.length, anulados: l.filter(d => d.void).length, perdida: l.filter(d => !d.void).reduce((a, d) => a + +d.cost, 0) };
+});
+await fails('un vendedor no puede descartar con su PIN', () => rpc('admin_descartar', { p_clave: PIN, p_id: 'ins-arequipe', p_cantidad: 1 }), 'CLAVE_INCORRECTA');
+await t('el respaldo incluye los descartes', async () => (await rpc('admin_respaldo', { p_clave: CLAVE })).descartes.length);
 await db.exec(`delete from intentos`);
 
 // --- bloqueo de intentos (al final: deja contadores) ---
